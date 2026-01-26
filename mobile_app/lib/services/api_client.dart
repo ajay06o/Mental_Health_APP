@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'auth_service.dart';
 
 class ApiClient {
+  // ✅ Render backend (single source of truth)
   static const String baseUrl =
       "https://mental-health-app-1-rv33.onrender.com";
 
@@ -40,7 +41,7 @@ class ApiClient {
   }
 
   // =========================
-  // GET (✅ REQUIRED BY HISTORY / PROFILE)
+  // GET
   // =========================
   static Future<http.Response> get(String endpoint) async {
     try {
@@ -106,6 +107,32 @@ class ApiClient {
             body: body,
           )
           .timeout(_timeout);
+
+      return response;
+    } on SocketException {
+      throw Exception("No internet connection");
+    }
+  }
+
+  // =========================
+  // PUT JSON ✅ (PROFILE UPDATE FIX)
+  // =========================
+  static Future<http.Response> put(
+    String endpoint,
+    Map<String, dynamic> body,
+  ) async {
+    try {
+      final response = await http
+          .put(
+            Uri.parse("$baseUrl$endpoint"),
+            headers: await _headers(),
+            body: jsonEncode(body),
+          )
+          .timeout(_timeout);
+
+      if (response.statusCode == 401) {
+        await AuthService.logout();
+      }
 
       return response;
     } on SocketException {

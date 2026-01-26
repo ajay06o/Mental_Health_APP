@@ -35,7 +35,6 @@ class PredictService {
 
       if (response.statusCode == 200) {
         final List<dynamic> decoded = jsonDecode(response.body);
-
         return decoded.whereType<Map<String, dynamic>>().toList();
       }
 
@@ -50,11 +49,9 @@ class PredictService {
   }
 
   // ==============================
-  // 🧠 AI SEMANTIC SEARCH
+  // 🧠 AI SEMANTIC SEARCH ✅ FIXED
   // ==============================
-  static Future<List<Map<String, dynamic>>> semanticSearch(
-    String query,
-  ) async {
+  static Future<List<Map<String, dynamic>>> semanticSearch(String query) async {
     if (query.trim().isEmpty) return [];
 
     try {
@@ -66,18 +63,7 @@ class PredictService {
       if (response.statusCode == 200) {
         final List<dynamic> decoded = jsonDecode(response.body);
 
-        return decoded
-            .whereType<Map<String, dynamic>>()
-            .map((e) => {
-                  "index": e["index"] ?? 0,
-                  "score": (e["score"] ?? 0.0).toDouble(),
-                  "text": e["text"] ?? "",
-                  "emotion": e["emotion"] ?? "unknown",
-                  "severity": e["severity"] ?? 0,
-                  "confidence": (e["confidence"] ?? 0.0).toDouble(),
-                  "timestamp": e["timestamp"] ?? "",
-                })
-            .toList();
+        return decoded.whereType<Map<String, dynamic>>().toList();
       }
 
       if (response.statusCode == 401) {
@@ -112,13 +98,24 @@ class PredictService {
   }
 
   // ==============================
-  // ✏️ UPDATE PROFILE (OPTIONAL)
+  // ✏️ UPDATE PROFILE
   // ==============================
-  static Future<void> updateProfile(String email) async {
+  static Future<void> updateProfile({
+    required String email,
+    String? password,
+  }) async {
     try {
-      final response = await ApiClient.post(
+      final body = <String, dynamic>{
+        "email": email,
+      };
+
+      if (password != null && password.isNotEmpty) {
+        body["password"] = password;
+      }
+
+      final response = await ApiClient.put(
         "/profile",
-        {"email": email},
+        body,
       );
 
       if (response.statusCode != 200) {
@@ -129,3 +126,5 @@ class PredictService {
     }
   }
 }
+
+

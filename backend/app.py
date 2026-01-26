@@ -17,7 +17,10 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from jose import jwt, JWTError
+from typing import Optional
+from pydantic import BaseModel
 
 from database import SessionLocal, engine
 from models import User, EmotionHistory
@@ -45,7 +48,7 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="6.3.0",
+    version="6.4.0",
 )
 
 # =====================================================
@@ -195,7 +198,7 @@ def predict(
     }
 
 # =====================================================
-# 🟢 HISTORY API (FIXES 404)
+# HISTORY API
 # =====================================================
 @app.get("/history")
 def get_history(
@@ -221,11 +224,72 @@ def get_history(
     ]
 
 # =====================================================
-# 🟢 PROFILE API (FIXES 404)
+# PROFILE APIs
 # =====================================================
+
 @app.get("/profile")
-def get_profile(user: User = Depends(get_current_user)):
+def get_profile(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    total_entries = (
+        db.query(func.count(EmotionHistory.id))
+        .filter(EmotionHistory.user_id == user.id)
+        .scalar()
+    ) or 0
+
+    avg_severity = (
+        db.query(func.avg(EmotionHistory.severity))
+        .filter(EmotionHistory.user_id == user.id)
+        .scalar()
+    ) or 0.0
+
+    high_risk = (
+        db.query(EmotionHistory)
+        .filter(
+            EmotionHistory.user_id == user.id,
+            EmotionHistory.severity >= 4,
+        )
+        .first()
+        is not None
+    )
+
     return {
         "user_id": user.id,
         "email": user.email,
+        "total_entries": int(total_entries),
+        "avg_severity": round(float(avg_severity), 2),
+        "high_risk": high_risk,
     }
+
+# -----------------------------
+# UPDATE PROFILE
+# -----------------------------
+class ProfileUpdate(BaseModel):
+    email: Optional[str] = None
+    password: Optional[str] = None
+
+@app.put("/profile")
+def update_profile(
+    payload: ProfileUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if payload.email:
+        exists = (
+            db.query(User)
+            .filter(User.email == payload.email, User.id != user.id)
+            .first()
+        )
+        if exists:
+            raise HTTPException(status_code=400, detail="Email already in use")
+
+        user.email = payload.email
+
+    if payload.password:
+        user.password = hash_password(payload.password)
+
+    db.commit()
+    db.refresh(user)
+
+    return {"message": "Profile updated successfully"}

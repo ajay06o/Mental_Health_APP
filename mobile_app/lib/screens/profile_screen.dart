@@ -12,13 +12,33 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
+class _ProfileScreenState extends State<ProfileScreen>
+    with SingleTickerProviderStateMixin {
   late Future<Map<String, dynamic>> _profileFuture;
+
+  late AnimationController _controller;
+  late Animation<double> _fadeAnimation;
 
   @override
   void initState() {
     super.initState();
     _profileFuture = PredictService.fetchProfile();
+
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+
+    _fadeAnimation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeInOut,
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   @override
@@ -41,7 +61,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         future: _profileFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(
+              child: CircularProgressIndicator(strokeWidth: 2),
+            );
           }
 
           if (snapshot.hasError) {
@@ -53,6 +75,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             );
           }
 
+          _controller.forward();
+
           final data = snapshot.data ?? {};
 
           final String email = data["email"] ?? "Unknown";
@@ -61,21 +85,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
               (data["avg_severity"] ?? 0).toDouble();
           final bool highRisk = data["high_risk"] == true;
 
-          return Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                _profileHeader(email),
-                const SizedBox(height: 20),
+          return FadeTransition(
+            opacity: _fadeAnimation,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  _profileHeader(email),
+                  const SizedBox(height: 20),
 
-                _statCard("📊 Total Entries", totalEntries.toString()),
-                _statCard("⚡ Avg Severity", avgSeverity.toStringAsFixed(1)),
+                  _statCard("📊 Total Entries", totalEntries.toString()),
+                  _statCard(
+                    "⚡ Avg Severity",
+                    avgSeverity.toStringAsFixed(1),
+                  ),
 
-                if (highRisk) _alertCard(),
+                  if (highRisk) _alertCard(),
 
-                const Spacer(),
-                _logoutButton(),
-              ],
+                  const Spacer(),
+                  _logoutButton(),
+                ],
+              ),
             ),
           );
         },
@@ -210,7 +240,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // ============================
-  // EDIT PROFILE (UI ONLY)
+  // EDIT PROFILE (BACKEND CONNECTED)
   // ============================
   void _openEditProfileSheet(Map<String, dynamic> data) {
     final emailController =
@@ -263,13 +293,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 width: double.infinity,
                 child: ElevatedButton(
                   child: const Text("Save Changes"),
-                  onPressed: () {
+                  onPressed: () async {
                     Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text("Profile updated (UI only)"),
-                      ),
-                    );
+
+                    try {
+                      await PredictService.updateProfile(
+                        email: emailController.text.trim(),
+                        password: passwordController.text.trim().isEmpty
+                            ? null
+                            : passwordController.text.trim(),
+                      );
+
+                      setState(() {
+                        _profileFuture =
+                            PredictService.fetchProfile();
+                      });
+
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content:
+                              Text("Profile updated successfully"),
+                        ),
+                      );
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(e.toString())),
+                      );
+                    }
                   },
                 ),
               )
