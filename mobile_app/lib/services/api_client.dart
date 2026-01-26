@@ -15,6 +15,7 @@ class ApiClient {
   static Future<Map<String, String>> _headers({
     bool json = true,
     bool withAuth = true,
+    bool isForm = false,
   }) async {
     final headers = <String, String>{
       "Accept": "application/json",
@@ -22,6 +23,10 @@ class ApiClient {
 
     if (json) {
       headers["Content-Type"] = "application/json";
+    }
+
+    if (isForm) {
+      headers["Content-Type"] = "application/x-www-form-urlencoded";
     }
 
     if (withAuth) {
@@ -35,7 +40,7 @@ class ApiClient {
   }
 
   // =========================
-  // GET
+  // GET (✅ REQUIRED BY HISTORY / PROFILE)
   // =========================
   static Future<http.Response> get(String endpoint) async {
     try {
@@ -93,7 +98,11 @@ class ApiClient {
       final response = await http
           .post(
             Uri.parse("$baseUrl$endpoint"),
-            headers: await _headers(json: false, withAuth: false),
+            headers: await _headers(
+              json: false,
+              withAuth: false,
+              isForm: true,
+            ),
             body: body,
           )
           .timeout(_timeout);
