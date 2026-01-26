@@ -1,16 +1,24 @@
 from datetime import datetime, timedelta
 from typing import Optional
+import os
+
 from passlib.context import CryptContext
 from jose import jwt, JWTError
 
 # ==============================
 # 🔐 SECURITY SETTINGS
 # ==============================
-SECRET_KEY = "CHANGE_THIS_SECRET_KEY"  # ❗ move to env variable in production
+SECRET_KEY = os.getenv(
+    "SECRET_KEY",
+    "CHANGE_THIS_SECRET_KEY",  # ❗ override in production (Render ENV)
+)
+
 ALGORITHM = "HS256"
 
 ACCESS_TOKEN_EXPIRE_MINUTES = 60        # 1 hour
 REFRESH_TOKEN_EXPIRE_DAYS = 7           # 7 days
+
+JWT_ISSUER = "mental-health-api"
 
 # ==============================
 # 🔑 PASSWORD HASHING
@@ -21,12 +29,12 @@ pwd_context = CryptContext(
 )
 
 # ==============================
-# 🔐 PASSWORD UTILITIES
+# 🔐 INTERNAL PASSWORD NORMALIZER
 # ==============================
-def hash_password(password: str) -> str:
+def _normalize_password(password: str) -> str:
     """
-    Hash password safely using bcrypt.
-    bcrypt has a strict 72-byte limit.
+    Normalize password for bcrypt.
+    bcrypt supports max 72 bytes.
     """
     if not isinstance(password, str):
         raise ValueError("Password must be a string")
@@ -35,13 +43,21 @@ def hash_password(password: str) -> str:
     if not password:
         raise ValueError("Password cannot be empty")
 
-    # bcrypt 72-byte protection
-    if len(password.encode("utf-8")) > 72:
-        password = password.encode("utf-8")[:72].decode(
-            "utf-8", errors="ignore"
-        )
+    raw = password.encode("utf-8")
+    if len(raw) > 72:
+        raw = raw[:72]
 
-    return pwd_context.hash(password)
+    return raw.decode("utf-8", errors="ignore")
+
+# ==============================
+# 🔐 PASSWORD UTILITIES
+# ==============================
+def hash_password(password: str) -> str:
+    """
+    Hash password safely using bcrypt.
+    """
+    normalized = _normalize_password(password)
+    return pwd_context.hash(normalized)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -51,18 +67,11 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     if not plain_password or not hashed_password:
         return False
 
-    plain_password = plain_password.strip()
-
-    if len(plain_password.encode("utf-8")) > 72:
-        plain_password = plain_password.encode("utf-8")[:72].decode(
-            "utf-8", errors="ignore"
-        )
-
     try:
-        return pwd_context.verify(plain_password, hashed_password)
+        normalized = _normalize_password(plain_password)
+        return pwd_context.verify(normalized, hashed_password)
     except Exception:
         return False
-
 
 # ==============================
 # 🎟️ ACCESS TOKEN
@@ -79,7 +88,8 @@ def create_access_token(
 
     to_encode = data.copy()
 
-    expire = datetime.utcnow() + timedelta(
+    now = datetime.utcnow()
+    expire = now + timedelta(
         minutes=expires_minutes
         if expires_minutes is not None
         else ACCESS_TOKEN_EXPIRE_MINUTES
@@ -87,11 +97,12 @@ def create_access_token(
 
     to_encode.update({
         "exp": expire,
+        "iat": now,
+        "iss": JWT_ISSUER,
         "type": "access",
     })
 
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-
 
 # ==============================
 # 🔁 REFRESH TOKEN
@@ -105,12 +116,13 @@ def create_refresh_token(data: dict) -> str:
 
     to_encode = data.copy()
 
-    expire = datetime.utcnow() + timedelta(
-        days=REFRESH_TOKEN_EXPIRE_DAYS
-    )
+    now = datetime.utcnow()
+    expire = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
 
     to_encode.update({
         "exp": expire,
+        "iat": now,
+        "iss": JWT_ISSUER,
         "type": "refresh",
     })
 
@@ -126,6 +138,7 @@ def verify_refresh_token(token: str) -> Optional[str]:
             token,
             SECRET_KEY,
             algorithms=[ALGORITHM],
+            options={"verify_aud": False},
         )
 
         if payload.get("type") != "refresh":
