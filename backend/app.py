@@ -35,9 +35,17 @@ from security import (
 from ai_models.mental_health_model import final_prediction
 import models
 
-# ================= AI SEMANTIC SEARCH =================
-from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
+# ================= AI SEMANTIC SEARCH (optional) =================
+try:
+    from sentence_transformers import SentenceTransformer
+    from sklearn.metrics.pairwise import cosine_similarity
+    _semantic_available = True
+    # Lazy load model after DB init to keep startup light
+    semantic_model = None
+except Exception:
+    _semantic_available = False
+    semantic_model = None
+
 
 # =====================================================
 # DB INIT
@@ -47,9 +55,12 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 # LOAD SEMANTIC MODEL (LAZY SAFE)
 # =====================================================
-semantic_model = SentenceTransformer(
-    "paraphrase-multilingual-MiniLM-L12-v2"
-)
+if _semantic_available:
+    try:
+        semantic_model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
+    except Exception:
+        semantic_model = None
+        _semantic_available = False
 
 # =====================================================
 # FASTAPI APP
@@ -150,9 +161,18 @@ def semantic_search(query: str, texts: list, threshold: float = 0.55):
     if not texts:
         return []
 
-    query_emb = semantic_model.encode([query])
-    text_embs = semantic_model.encode(texts)
-    similarities = cosine_similarity(query_emb, text_embs)[0]
+    if _semantic_available and semantic_model is not None:
+        query_emb = semantic_model.encode([query])
+        text_embs = semantic_model.encode(texts)
+        similarities = cosine_similarity(query_emb, text_embs)[0]
+    else:
+        # Lightweight fallback: token overlap score (cheap, no heavy deps)
+        q_tokens = set(str(query).lower().split())
+        similarities = []
+        for t in texts:
+            t_tokens = set(str(t).lower().split())
+            score = len(q_tokens & t_tokens) / max(1, len(t_tokens))
+            similarities.append(score)
 
     return [
         {"index": i, "score": float(score)}
