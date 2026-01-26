@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'router/app_router.dart';
+import 'services/auth_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ✅ IMPORTANT: Initialize auth state before app starts
+  await AuthService.init();
+
   runApp(const MentalHealthApp());
 }
 
@@ -22,4 +27,3 @@ class MentalHealthApp extends StatelessWidget {
     );
   }
 }
-

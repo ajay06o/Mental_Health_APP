@@ -6,8 +6,30 @@ import 'api_client.dart';
 class AuthService {
   static const String _accessTokenKey = "access_token";
 
-  // ✅ REQUIRED FOR GoRouter (SYNC REDIRECT)
+  // ✅ Used by GoRouter redirect (sync read)
   static bool cachedLoginState = false;
+
+  // ✅ Prevent repeated disk reads
+  static bool _initialized = false;
+
+  // =========================
+  // 🔁 INIT (CALL ON APP START)
+  // =========================
+  static Future<void> init() async {
+    if (_initialized) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString(_accessTokenKey);
+
+    if (token != null && !JwtDecoder.isExpired(token)) {
+      cachedLoginState = true;
+    } else {
+      cachedLoginState = false;
+      await prefs.remove(_accessTokenKey);
+    }
+
+    _initialized = true;
+  }
 
   // =========================
   // REGISTER
@@ -42,7 +64,7 @@ class AuthService {
       final response = await ApiClient.postForm(
         "/login",
         {
-          "username": email, // OAuth2PasswordRequestForm
+          "username": email,
           "password": password,
         },
       );
@@ -63,9 +85,7 @@ class AuthService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_accessTokenKey, accessToken);
 
-      // ✅ UPDATE CACHE
       cachedLoginState = true;
-
       return true;
     } catch (e) {
       _log("LOGIN EXCEPTION: $e");
@@ -80,18 +100,19 @@ class AuthService {
     String email,
     String password,
   ) async {
-    final registered = await register(email, password);
-    if (!registered) return false;
+    final ok = await register(email, password);
+    if (!ok) return false;
 
     return await login(email, password);
   }
 
   // =========================
-  // 🔐 CHECK LOGIN STATE (ASYNC)
+  // 🔐 CHECK LOGIN STATE
   // =========================
   static Future<bool> isLoggedIn() async {
-    final token = await getAccessToken();
-    cachedLoginState = token != null;
+    if (!_initialized) {
+      await init();
+    }
     return cachedLoginState;
   }
 
@@ -102,12 +123,7 @@ class AuthService {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString(_accessTokenKey);
 
-    if (token == null) {
-      cachedLoginState = false;
-      return null;
-    }
-
-    if (JwtDecoder.isExpired(token)) {
+    if (token == null || JwtDecoder.isExpired(token)) {
       await logout();
       return null;
     }
@@ -121,8 +137,6 @@ class AuthService {
   static Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_accessTokenKey);
-
-    // ✅ UPDATE CACHE
     cachedLoginState = false;
   }
 

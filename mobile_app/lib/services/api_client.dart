@@ -4,26 +4,45 @@ import 'package:http/http.dart' as http;
 import 'auth_service.dart';
 
 class ApiClient {
-  // ✅ SINGLE SOURCE OF TRUTH (Render Backend)
   static const String baseUrl =
       "https://mental-health-app-1-rv33.onrender.com";
 
   static const Duration _timeout = Duration(seconds: 15);
 
   // =========================
-  // GET REQUEST
+  // COMMON HEADERS
+  // =========================
+  static Future<Map<String, String>> _headers({
+    bool json = true,
+    bool withAuth = true,
+  }) async {
+    final headers = <String, String>{
+      "Accept": "application/json",
+    };
+
+    if (json) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    if (withAuth) {
+      final token = await AuthService.getAccessToken();
+      if (token != null) {
+        headers["Authorization"] = "Bearer $token";
+      }
+    }
+
+    return headers;
+  }
+
+  // =========================
+  // GET
   // =========================
   static Future<http.Response> get(String endpoint) async {
     try {
-      final token = await AuthService.getAccessToken();
-
       final response = await http
           .get(
             Uri.parse("$baseUrl$endpoint"),
-            headers: {
-              "Accept": "application/json",
-              if (token != null) "Authorization": "Bearer $token",
-            },
+            headers: await _headers(),
           )
           .timeout(_timeout);
 
@@ -34,31 +53,21 @@ class ApiClient {
       return response;
     } on SocketException {
       throw Exception("No internet connection");
-    } on HttpException {
-      throw Exception("HTTP error occurred");
-    } on FormatException {
-      throw Exception("Invalid response format");
     }
   }
 
   // =========================
-  // POST REQUEST (JSON)
+  // POST JSON
   // =========================
   static Future<http.Response> post(
     String endpoint,
     Map<String, dynamic> body,
   ) async {
     try {
-      final token = await AuthService.getAccessToken();
-
       final response = await http
           .post(
             Uri.parse("$baseUrl$endpoint"),
-            headers: {
-              "Content-Type": "application/json",
-              "Accept": "application/json",
-              if (token != null) "Authorization": "Bearer $token",
-            },
+            headers: await _headers(),
             body: jsonEncode(body),
           )
           .timeout(_timeout);
@@ -70,15 +79,11 @@ class ApiClient {
       return response;
     } on SocketException {
       throw Exception("No internet connection");
-    } on HttpException {
-      throw Exception("HTTP error occurred");
-    } on FormatException {
-      throw Exception("Invalid response format");
     }
   }
 
   // =========================
-  // POST FORM (LOGIN ONLY)
+  // POST FORM (LOGIN)
   // =========================
   static Future<http.Response> postForm(
     String endpoint,
@@ -88,9 +93,7 @@ class ApiClient {
       final response = await http
           .post(
             Uri.parse("$baseUrl$endpoint"),
-            headers: {
-              "Content-Type": "application/x-www-form-urlencoded",
-            },
+            headers: await _headers(json: false, withAuth: false),
             body: body,
           )
           .timeout(_timeout);
