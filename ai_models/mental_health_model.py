@@ -1,7 +1,13 @@
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from langdetect import detect
+try:
+    from langdetect import detect  # optional; may not have a wheel on some Python versions
+except Exception:
+    def detect(text: str) -> str:
+        # Fallback: assume English for safety when langdetect isn't available
+        return "en"
+
 from deep_translator import GoogleTranslator
 
 # =====================================================
@@ -62,7 +68,10 @@ model.fit(X, y)
 def translate_to_english(text: str) -> str:
     try:
         if detect(text) != "en":
-            return GoogleTranslator(source="auto", target="en").translate(text)
+            try:
+                return GoogleTranslator(source="auto", target="en").translate(text)
+            except Exception:
+                return text
         return text
     except Exception:
         return text
