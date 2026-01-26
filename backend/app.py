@@ -13,7 +13,7 @@ if PROJECT_ROOT not in sys.path:
 # =====================================================
 # IMPORTS
 # =====================================================
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -35,61 +35,36 @@ from security import (
 from ai_models.mental_health_model import final_prediction
 import models
 
-# ================= AI SEMANTIC SEARCH (optional) =================
-try:
-    from sentence_transformers import SentenceTransformer
-    from sklearn.metrics.pairwise import cosine_similarity
-    _semantic_available = True
-    semantic_model = None
-except Exception:
-    _semantic_available = False
-    semantic_model = None
-
 # =====================================================
 # DB INIT
 # =====================================================
 models.Base.metadata.create_all(bind=engine)
 
 # =====================================================
-# LOAD SEMANTIC MODEL (LAZY SAFE)
-# =====================================================
-if _semantic_available:
-    try:
-        semantic_model = SentenceTransformer(
-            "paraphrase-multilingual-MiniLM-L12-v2"
-        )
-    except Exception:
-        semantic_model = None
-        _semantic_available = False
-
-# =====================================================
 # FASTAPI APP
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="6.2.0",
+    version="6.3.0",
 )
 
 # =====================================================
-# CORS (Render + Mobile Safe)
+# CORS
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten later
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # =====================================================
-# ROOT & HEALTH (🔥 FIX FOR RENDER 404)
+# ROOT & HEALTH
 # =====================================================
 @app.get("/")
 def root():
-    return {
-        "status": "OK",
-        "message": "Mental Health Backend is running 🚀"
-    }
+    return {"status": "OK", "message": "Mental Health Backend is running 🚀"}
 
 @app.get("/health")
 def health():
@@ -106,7 +81,7 @@ def get_db():
         db.close()
 
 # =====================================================
-# AUTH
+# AUTH HELPERS
 # =====================================================
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
@@ -117,6 +92,7 @@ def get_current_user(
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email = payload.get("sub")
+
         if not email:
             raise HTTPException(status_code=401, detail="Invalid token")
 
@@ -125,44 +101,9 @@ def get_current_user(
             raise HTTPException(status_code=401, detail="User not found")
 
         return user
+
     except JWTError:
         raise HTTPException(status_code=401, detail="Token error")
-
-# =====================================================
-# EMOTION LOGIC
-# =====================================================
-def contains_suicidal_intent(text: str) -> bool:
-    text = text.lower()
-    keywords = [
-        "end my life", "kill myself", "want to die",
-        "no reason to live", "suicide", "self harm",
-        "can't handle this", "can't go on",
-        "life is unbearable", "i give up",
-        "ఆత్మహత్య", "చావాలని ఉంది",
-        "मरना चाहता हूँ", "आत्महत्या",
-    ]
-    return any(k in text for k in keywords)
-
-def normalize_emotion(raw: str) -> str:
-    raw = raw.lower().strip()
-    if raw == "suicidal":
-        return "suicidal"
-    if raw in ["depression", "depressed", "hopeless", "empty", "numb"]:
-        return "depression"
-    if raw in ["anxiety", "stress", "panic", "anger"]:
-        return "anxiety"
-    if raw in ["sad", "sadness", "lonely"]:
-        return "sad"
-    return "happy"
-
-def calculate_severity(emotion: str) -> int:
-    return {
-        "happy": 1,
-        "sad": 2,
-        "anxiety": 3,
-        "depression": 4,
-        "suicidal": 5,
-    }.get(emotion, 1)
 
 # =====================================================
 # AUTH ROUTES
@@ -176,6 +117,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         email=user.email,
         password=hash_password(user.password),
     )
+
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
@@ -192,6 +134,7 @@ def login(
     db: Session = Depends(get_db),
 ):
     user = db.query(User).filter(User.email == form.username).first()
+
     if not user or not verify_password(form.password, user.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
@@ -204,6 +147,7 @@ def login(
 @app.post("/refresh")
 def refresh(payload: dict):
     email = verify_refresh_token(payload.get("refresh_token"))
+
     if not email:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
@@ -218,13 +162,18 @@ def predict(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if contains_suicidal_intent(data.text):
-        emotion, severity, confidence = "suicidal", 5, 1.0
-    else:
-        result = final_prediction(data.text)
-        emotion = normalize_emotion(result["final_mental_state"])
-        severity = calculate_severity(emotion)
-        confidence = float(result["confidence"])
+    result = final_prediction(data.text)
+
+    emotion = result["final_mental_state"]
+    confidence = float(result["confidence"])
+
+    severity = {
+        "happy": 1,
+        "sad": 2,
+        "anxiety": 3,
+        "depression": 4,
+        "suicidal": 5,
+    }.get(emotion, 1)
 
     record = EmotionHistory(
         user_id=user.id,
@@ -233,6 +182,7 @@ def predict(
         confidence=confidence,
         severity=severity,
     )
+
     db.add(record)
     db.commit()
     db.refresh(record)
@@ -242,4 +192,40 @@ def predict(
         "confidence": record.confidence,
         "severity": record.severity,
         "timestamp": record.timestamp.isoformat(),
+    }
+
+# =====================================================
+# 🟢 HISTORY API (FIXES 404)
+# =====================================================
+@app.get("/history")
+def get_history(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    records = (
+        db.query(EmotionHistory)
+        .filter(EmotionHistory.user_id == user.id)
+        .order_by(EmotionHistory.timestamp.desc())
+        .all()
+    )
+
+    return [
+        {
+            "text": r.text,
+            "emotion": r.emotion,
+            "confidence": r.confidence,
+            "severity": r.severity,
+            "timestamp": r.timestamp.isoformat(),
+        }
+        for r in records
+    ]
+
+# =====================================================
+# 🟢 PROFILE API (FIXES 404)
+# =====================================================
+@app.get("/profile")
+def get_profile(user: User = Depends(get_current_user)):
+    return {
+        "user_id": user.id,
+        "email": user.email,
     }
