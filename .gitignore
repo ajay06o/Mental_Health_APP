@@ -1,0 +1,14 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Flutter
+build/
+.dart_tool/
+
+# Environment
+.env
+
+# Database (optional for production)
+*.db
