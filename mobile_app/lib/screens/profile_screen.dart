@@ -45,22 +45,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
           }
 
           if (snapshot.hasError) {
-            return Center(child: Text(snapshot.error.toString()));
+            return Center(
+              child: Text(
+                snapshot.error.toString(),
+                textAlign: TextAlign.center,
+              ),
+            );
           }
 
-          final data = snapshot.data!;
+          final data = snapshot.data ?? {};
+
+          final String email = data["email"] ?? "Unknown";
+          final int totalEntries = data["total_entries"] ?? 0;
+          final double avgSeverity =
+              (data["avg_severity"] ?? 0).toDouble();
+          final bool highRisk = data["high_risk"] == true;
 
           return Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                _profileHeader(data["email"]),
+                _profileHeader(email),
                 const SizedBox(height: 20),
 
-                _statCard("📊 Total Entries", data["total_entries"].toString()),
-                _statCard("⚡ Avg Severity", data["avg_severity"].toString()),
+                _statCard("📊 Total Entries", totalEntries.toString()),
+                _statCard("⚡ Avg Severity", avgSeverity.toStringAsFixed(1)),
 
-                if (data["high_risk"]) _alertCard(),
+                if (highRisk) _alertCard(),
 
                 const Spacer(),
                 _logoutButton(),
@@ -104,7 +115,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // ============================
-  // STATS
+  // STATS CARD
   // ============================
   Widget _statCard(String title, String value) {
     return Container(
@@ -118,17 +129,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(title),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
         ],
       ),
     );
   }
 
   // ============================
-  // ALERT
+  // ALERT CARD
   // ============================
   Widget _alertCard() {
     return Container(
+      margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
@@ -150,7 +165,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // ============================
-  // 🔐 LOGOUT (CONFIRMATION + CLEANUP)
+  // LOGOUT
   // ============================
   Widget _logoutButton() {
     return SizedBox(
@@ -186,24 +201,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
 
     if (shouldLogout == true && mounted) {
-      // 🔄 Clear bottom-nav saved state
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove("last_tab_index");
 
-      // 🔐 Logout
       await AuthService.logout();
-
-      // ✅ GoRouter navigation
       context.go("/login");
     }
   }
 
   // ============================
-  // ✏️ EDIT PROFILE (BOTTOM SHEET)
+  // EDIT PROFILE (UI ONLY)
   // ============================
   void _openEditProfileSheet(Map<String, dynamic> data) {
     final emailController =
-        TextEditingController(text: data["email"]);
+        TextEditingController(text: data["email"] ?? "");
     final passwordController = TextEditingController();
 
     showModalBottomSheet(
@@ -254,7 +265,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: const Text("Save Changes"),
                   onPressed: () {
                     Navigator.pop(context);
-
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text("Profile updated (UI only)"),
@@ -270,4 +280,3 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 }
-
