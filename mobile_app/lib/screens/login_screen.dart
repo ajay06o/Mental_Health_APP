@@ -43,40 +43,52 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   // ==============================
-  // LOGIN HANDLER
+  // LOGIN HANDLER (SAFE UPDATED)
   // ==============================
   Future<void> _handleLogin() async {
+    if (_isLoading) return;
+
     FocusScope.of(context).unfocus();
 
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
 
-    final success = await AuthService.login(
-      _emailController.text.trim(),
-      _passwordController.text.trim(),
-    );
+    try {
+      final success = await AuthService.login(
+        _emailController.text.trim(),
+        _passwordController.text.trim(),
+      );
 
-    if (!mounted) return;
-
-    setState(() => _isLoading = false);
-
-    if (success) {
-      setState(() => _showSuccess = true);
-      _successController.forward();
-
-      await Future.delayed(const Duration(milliseconds: 1200));
       if (!mounted) return;
 
-      context.go("/home");
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Invalid email or password"),
-          backgroundColor: Colors.red,
-        ),
-      );
+      setState(() => _isLoading = false);
+
+      if (success) {
+        setState(() => _showSuccess = true);
+        _successController.forward();
+
+        await Future.delayed(const Duration(milliseconds: 1200));
+        if (!mounted) return;
+
+        context.go("/home");
+      } else {
+        _showError("Invalid email or password");
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      _showError("Unable to login. Please try again.");
     }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+      ),
+    );
   }
 
   @override
@@ -158,7 +170,6 @@ class _LoginScreenState extends State<LoginScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // ================= HERO ICON =================
                 const Hero(
                   tag: "auth-hero",
                   child: Icon(
@@ -184,7 +195,6 @@ class _LoginScreenState extends State<LoginScreen>
 
                 const SizedBox(height: 30),
 
-                // ================= EMAIL =================
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
@@ -205,7 +215,6 @@ class _LoginScreenState extends State<LoginScreen>
 
                 const SizedBox(height: 16),
 
-                // ================= PASSWORD =================
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
@@ -238,14 +247,13 @@ class _LoginScreenState extends State<LoginScreen>
 
                 const SizedBox(height: 30),
 
-                // ================= LOGIN BUTTON =================
                 SizedBox(
                   width: double.infinity,
                   height: 54,
                   child: ElevatedButton(
                     onPressed: _isLoading ? null : _handleLogin,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.indigo.shade600,
+                      backgroundColor: Colors.indigo,
                       foregroundColor: Colors.white,
                       elevation: 6,
                       shape: RoundedRectangleBorder(
@@ -287,9 +295,6 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  // =========================
-  // INPUT DECORATION
-  // =========================
   InputDecoration _inputDecoration({
     required String label,
     required IconData icon,
@@ -312,4 +317,3 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 }
-

@@ -59,28 +59,33 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ==============================
-  // LOAD HISTORY
+  // LOAD HISTORY (SAFE)
   // ==============================
   Future<void> _loadHistory() async {
-    final data = await PredictService.fetchHistory();
+    try {
+      final data = await PredictService.fetchHistory();
 
-    _points
-      ..clear()
-      ..addAll(
-        data.map(
-          (e) => TrendPoint(
-            e["emotion"],
-            DateTime.parse(e["timestamp"]).toUtc(),
+      _points
+        ..clear()
+        ..addAll(
+          data.map(
+            (e) => TrendPoint(
+              e["emotion"] ?? "unknown",
+              DateTime.tryParse(e["timestamp"] ?? "")?.toUtc() ??
+                  DateTime.now().toUtc(),
+            ),
           ),
-        ),
-      );
+        );
 
-    _points.sort((a, b) => a.time.compareTo(b.time));
-    setState(() {});
+      _points.sort((a, b) => a.time.compareTo(b.time));
+      if (mounted) setState(() {});
+    } catch (e) {
+      _showError("Failed to load history");
+    }
   }
 
   // ==============================
-  // ANALYZE
+  // ANALYZE (SAFE)
   // ==============================
   Future<void> _analyze() async {
     final text = _controller.text.trim();
@@ -90,20 +95,38 @@ class _HomeScreenState extends State<HomeScreen> {
 
     setState(() => _loading = true);
 
-    final result = await PredictService.predictEmotion(text);
+    try {
+      final result = await PredictService.predictEmotion(text);
 
-    _points.add(
-      TrendPoint(
-        result["emotion"],
-        DateTime.parse(result["timestamp"]).toUtc(),
+      _points.add(
+        TrendPoint(
+          result["emotion"] ?? "unknown",
+          DateTime.tryParse(result["timestamp"] ?? "")?.toUtc() ??
+              DateTime.now().toUtc(),
+        ),
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _currentEmotion = result["emotion"];
+        _controller.clear();
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      _showError("Analysis failed. Please try again.");
+    }
+  }
+
+  void _showError(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: Colors.red,
       ),
     );
-
-    setState(() {
-      _currentEmotion = result["emotion"];
-      _controller.clear();
-      _loading = false;
-    });
   }
 
   // ==============================
@@ -181,48 +204,31 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // ==============================
-  // LOCALIZED EMOTION LABEL
-  // ==============================
   String _localizedEmotion(String emotion) {
     switch (_language) {
       case AppLanguage.telugu:
-        switch (emotion.toLowerCase()) {
-          case "happy":
-            return "సంతోషం";
-          case "sad":
-            return "విషాదం";
-          case "anxiety":
-          case "stress":
-            return "ఆందోళన";
-          case "angry":
-            return "కోపం";
-          case "depression":
-            return "డిప్రెషన్";
-          case "suicidal":
-            return "ఆత్మహత్య ఆలోచనలు";
-          default:
-            return "సాధారణం";
-        }
+        return {
+              "happy": "సంతోషం",
+              "sad": "విషాదం",
+              "anxiety": "ఆందోళన",
+              "stress": "ఆందోళన",
+              "angry": "కోపం",
+              "depression": "డిప్రెషన్",
+              "suicidal": "ఆత్మహత్య ఆలోచనలు",
+            }[emotion.toLowerCase()] ??
+            "సాధారణం";
 
       case AppLanguage.hindi:
-        switch (emotion.toLowerCase()) {
-          case "happy":
-            return "खुशी";
-          case "sad":
-            return "उदासी";
-          case "anxiety":
-          case "stress":
-            return "चिंता";
-          case "angry":
-            return "गुस्सा";
-          case "depression":
-            return "अवसाद";
-          case "suicidal":
-            return "आत्महत्या के विचार";
-          default:
-            return "सामान्य";
-        }
+        return {
+              "happy": "खुशी",
+              "sad": "उदासी",
+              "anxiety": "चिंता",
+              "stress": "चिंता",
+              "angry": "गुस्सा",
+              "depression": "अवसाद",
+              "suicidal": "आत्महत्या के विचार",
+            }[emotion.toLowerCase()] ??
+            "सामान्य";
 
       case AppLanguage.english:
       default:
@@ -234,7 +240,7 @@ class _HomeScreenState extends State<HomeScreen> {
       utc.add(const Duration(hours: 5, minutes: 30));
 
   // ==============================
-  // GRAPH (FIXED)
+  // GRAPH (UNCHANGED LOGIC)
   // ==============================
   Widget _graph() {
     if (_points.length < 2) {
@@ -257,15 +263,12 @@ class _HomeScreenState extends State<HomeScreen> {
         LineChartData(
           minY: 0.8,
           maxY: 5.2,
-
-          clipData: FlClipData.all(), // ✅ CLIP FIX
-
+          clipData: FlClipData.all(),
           gridData: FlGridData(
             show: true,
             horizontalInterval: 1,
             drawVerticalLine: false,
           ),
-
           titlesData: FlTitlesData(
             leftTitles: AxisTitles(
               sideTitles: SideTitles(
@@ -273,20 +276,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 interval: 1,
                 reservedSize: 36,
                 getTitlesWidget: (value, _) {
-                  switch (value.round()) {
-                    case 1:
-                      return const Text("😊");
-                    case 2:
-                      return const Text("😔");
-                    case 3:
-                      return const Text("😰");
-                    case 4:
-                      return const Text("💔");
-                    case 5:
-                      return const Text("🚨");
-                    default:
-                      return const SizedBox.shrink();
-                  }
+                  return Text(_emoji(
+                    ["", "happy", "sad", "anxiety", "depression", "suicidal"]
+                        .elementAt(value.round().clamp(0, 5)),
+                  ));
                 },
               ),
             ),
@@ -308,18 +301,16 @@ class _HomeScreenState extends State<HomeScreen> {
             rightTitles:
                 AxisTitles(sideTitles: SideTitles(showTitles: false)),
           ),
-
           lineBarsData: [
             LineChartBarData(
               spots: spots,
               isCurved: true,
-              preventCurveOverShooting: true, // ✅ KEY FIX
+              preventCurveOverShooting: true,
               barWidth: 4,
               color: Colors.deepPurple,
               dotData: FlDotData(show: true),
             ),
           ],
-
           lineTouchData: LineTouchData(
             touchTooltipData: LineTouchTooltipData(
               tooltipBgColor: Colors.black87,

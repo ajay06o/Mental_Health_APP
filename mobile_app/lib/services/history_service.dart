@@ -1,31 +1,43 @@
+import 'dart:convert';
+import 'api_client.dart';
+
 class HistoryService {
-  static final List<Map<String, dynamic>> _history = [];
-
   // ==============================
-  // ADD HISTORY
-  // ==============================
-  static Future<void> addHistory(
-    String emotion,
-    DateTime timestamp,
-  ) async {
-    _history.add({
-      "emotion": emotion,
-      "timestamp": timestamp.toIso8601String(),
-    });
-  }
-
-  // ==============================
-  // FETCH HISTORY
+  // FETCH HISTORY FROM BACKEND
   // ==============================
   static Future<List<Map<String, dynamic>>> fetchHistory() async {
-    await Future.delayed(const Duration(milliseconds: 200));
-    return List<Map<String, dynamic>>.from(_history);
+    try {
+      final response = await ApiClient.get("/history");
+
+      if (response.statusCode != 200) {
+        throw Exception(
+          "Failed to load history: ${response.statusCode}",
+        );
+      }
+
+      final List<dynamic> data = jsonDecode(response.body);
+
+      return data.map<Map<String, dynamic>>((item) {
+        return {
+          "text": item["text"],
+          "emotion": item["emotion"],
+          "confidence": item["confidence"],
+          "severity": item["severity"],
+          "timestamp": item["timestamp"],
+        };
+      }).toList();
+    } catch (e) {
+      throw Exception("History fetch error: $e");
+    }
   }
 
   // ==============================
-  // CLEAR HISTORY (OPTIONAL)
+  // OPTIONAL: CLEAR HISTORY (LOCAL ONLY)
+  // Backend delete not implemented
   // ==============================
-  static Future<void> clearHistory() async {
-    _history.clear();
+  static Future<void> clearLocalHistory() async {
+    // Placeholder for future backend delete API
+    return;
   }
 }
+

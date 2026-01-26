@@ -1,38 +1,16 @@
 import 'dart:convert';
-import 'dart:io';
-import 'package:http/http.dart' as http;
-import 'auth_service.dart';
+import 'api_client.dart';
 
 class PredictService {
-  static const String baseUrl = "http://127.0.0.1:8000";
-
   // ==============================
-  // COMMON HEADERS
-  // ==============================
-  static Future<Map<String, String>> _headers() async {
-    final token = await AuthService.getAccessToken();
-    if (token == null) {
-      throw Exception("User not authenticated");
-    }
-
-    return {
-      "Content-Type": "application/json",
-      "Authorization": "Bearer $token",
-    };
-  }
-
-  // ==============================
-  // PREDICT EMOTION
+  // 🧠 PREDICT EMOTION
   // ==============================
   static Future<Map<String, dynamic>> predictEmotion(String text) async {
     try {
-      final response = await http
-          .post(
-            Uri.parse("$baseUrl/predict"),
-            headers: await _headers(),
-            body: jsonEncode({"text": text}),
-          )
-          .timeout(const Duration(seconds: 10));
+      final response = await ApiClient.post(
+        "/predict",
+        {"text": text},
+      );
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
@@ -43,28 +21,22 @@ class PredictService {
       }
 
       throw Exception("Prediction failed (${response.statusCode})");
-    } on SocketException {
-      throw Exception("No internet connection");
+    } catch (e) {
+      throw Exception("Prediction error: $e");
     }
   }
 
   // ==============================
-  // FETCH HISTORY
+  // 📜 FETCH HISTORY
   // ==============================
   static Future<List<Map<String, dynamic>>> fetchHistory() async {
     try {
-      final response = await http
-          .get(
-            Uri.parse("$baseUrl/history"),
-            headers: await _headers(),
-          )
-          .timeout(const Duration(seconds: 10));
+      final response = await ApiClient.get("/history");
 
       if (response.statusCode == 200) {
-        final List decoded = jsonDecode(response.body);
-        return decoded
-            .whereType<Map<String, dynamic>>()
-            .toList();
+        final List<dynamic> decoded = jsonDecode(response.body);
+
+        return decoded.whereType<Map<String, dynamic>>().toList();
       }
 
       if (response.statusCode == 401) {
@@ -72,13 +44,13 @@ class PredictService {
       }
 
       throw Exception("Failed to load history (${response.statusCode})");
-    } on SocketException {
-      throw Exception("No internet connection");
+    } catch (e) {
+      throw Exception("History fetch error: $e");
     }
   }
 
   // ==============================
-  // 🧠 AI SEMANTIC SEARCH (MULTILINGUAL)
+  // 🧠 AI SEMANTIC SEARCH
   // ==============================
   static Future<List<Map<String, dynamic>>> semanticSearch(
     String query,
@@ -86,20 +58,14 @@ class PredictService {
     if (query.trim().isEmpty) return [];
 
     try {
-      final response = await http
-          .post(
-            Uri.parse("$baseUrl/semantic-search"),
-            headers: await _headers(),
-            body: jsonEncode({
-              "query": query,
-            }),
-          )
-          .timeout(const Duration(seconds: 15));
+      final response = await ApiClient.post(
+        "/semantic-search",
+        {"query": query},
+      );
 
       if (response.statusCode == 200) {
-        final List decoded = jsonDecode(response.body);
+        final List<dynamic> decoded = jsonDecode(response.body);
 
-        // 🔒 Strong type safety (prevents null/int crash)
         return decoded
             .whereType<Map<String, dynamic>>()
             .map((e) => {
@@ -119,20 +85,17 @@ class PredictService {
       }
 
       throw Exception("Semantic search failed (${response.statusCode})");
-    } on SocketException {
-      throw Exception("No internet connection");
+    } catch (e) {
+      throw Exception("Semantic search error: $e");
     }
   }
 
   // ==============================
-  // FETCH PROFILE
+  // 👤 FETCH PROFILE
   // ==============================
   static Future<Map<String, dynamic>> fetchProfile() async {
     try {
-      final response = await http.get(
-        Uri.parse("$baseUrl/profile"),
-        headers: await _headers(),
-      );
+      final response = await ApiClient.get("/profile");
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
@@ -143,27 +106,26 @@ class PredictService {
       }
 
       throw Exception("Failed to load profile");
-    } on SocketException {
-      throw Exception("No internet connection");
+    } catch (e) {
+      throw Exception("Profile fetch error: $e");
     }
   }
 
   // ==============================
-  // UPDATE PROFILE
+  // ✏️ UPDATE PROFILE (OPTIONAL)
   // ==============================
   static Future<void> updateProfile(String email) async {
     try {
-      final response = await http.put(
-        Uri.parse("$baseUrl/profile"),
-        headers: await _headers(),
-        body: jsonEncode({"email": email}),
+      final response = await ApiClient.post(
+        "/profile",
+        {"email": email},
       );
 
       if (response.statusCode != 200) {
         throw Exception("Profile update failed");
       }
-    } on SocketException {
-      throw Exception("No internet connection");
+    } catch (e) {
+      throw Exception("Profile update error: $e");
     }
   }
 }

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'router/app_router.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const MentalHealthApp());
 }
@@ -12,8 +12,14 @@ class MentalHealthApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
+      title: "Mental Health App",
       debugShowCheckedModeBanner: false,
       routerConfig: appRouter,
+      theme: ThemeData(
+        primarySwatch: Colors.indigo,
+        useMaterial3: true,
+      ),
     );
   }
 }
+

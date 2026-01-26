@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+
 import '../services/auth_service.dart';
 
 import '../screens/splash_screen.dart';
@@ -11,18 +12,20 @@ import '../screens/settings_screen.dart';
 final GoRouter appRouter = GoRouter(
   initialLocation: "/splash",
 
-  // ✅ SINGLE SOURCE OF TRUTH FOR AUTH
-  redirect: (context, state) async {
-    final loggedIn = await AuthService.isLoggedIn();
+  // ✅ SYNCHRONOUS AUTH GUARD (CORRECT WAY)
+  redirect: (context, state) {
     final location = state.matchedLocation;
 
-    // Allow splash always
-    if (location == "/splash") return null;
+    // Always allow splash
+    if (location == "/splash") {
+      return null;
+    }
 
+    final loggedIn = AuthService.cachedLoginState;
     final isAuthRoute =
         location == "/login" || location == "/register";
 
-    // 🔐 Not logged in → force login
+    // 🔐 Not logged in → redirect to login
     if (!loggedIn && !isAuthRoute) {
       return "/login";
     }

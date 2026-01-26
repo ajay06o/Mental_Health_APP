@@ -1,37 +1,33 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'api_client.dart';
 
 class AuthService {
-  // 🔥 REAL PHONE FIX — PC IP
-  static const String baseUrl = "http://10.21.175.226:8000";
-
   static const String _accessTokenKey = "access_token";
 
-  static const Duration _timeout = Duration(seconds: 12);
+  // ✅ REQUIRED FOR GoRouter (SYNC REDIRECT)
+  static bool cachedLoginState = false;
 
   // =========================
   // REGISTER
   // =========================
   static Future<bool> register(String email, String password) async {
     try {
-      final res = await http
-          .post(
-            Uri.parse("$baseUrl/register"),
-            headers: {"Content-Type": "application/json"},
-            body: jsonEncode({
-              "email": email,
-              "password": password,
-            }),
-          )
-          .timeout(_timeout);
+      final response = await ApiClient.post(
+        "/register",
+        {
+          "email": email,
+          "password": password,
+        },
+      );
 
-      if (res.statusCode != 200) {
-        _log("REGISTER FAILED: ${res.statusCode} | ${res.body}");
+      if (response.statusCode != 200) {
+        _log("REGISTER FAILED: ${response.statusCode} | ${response.body}");
+        return false;
       }
 
-      return res.statusCode == 200;
+      return true;
     } catch (e) {
       _log("REGISTER EXCEPTION: $e");
       return false;
@@ -43,25 +39,20 @@ class AuthService {
   // =========================
   static Future<bool> login(String email, String password) async {
     try {
-      final res = await http
-          .post(
-            Uri.parse("$baseUrl/login"),
-            headers: {
-              "Content-Type": "application/x-www-form-urlencoded",
-            },
-            body: {
-              "username": email, // OAuth2PasswordRequestForm
-              "password": password,
-            },
-          )
-          .timeout(_timeout);
+      final response = await ApiClient.postForm(
+        "/login",
+        {
+          "username": email, // OAuth2PasswordRequestForm
+          "password": password,
+        },
+      );
 
-      if (res.statusCode != 200) {
-        _log("LOGIN FAILED: ${res.statusCode} | ${res.body}");
+      if (response.statusCode != 200) {
+        _log("LOGIN FAILED: ${response.statusCode} | ${response.body}");
         return false;
       }
 
-      final data = jsonDecode(res.body);
+      final data = jsonDecode(response.body);
       final accessToken = data["access_token"];
 
       if (accessToken == null || JwtDecoder.isExpired(accessToken)) {
@@ -71,6 +62,9 @@ class AuthService {
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_accessTokenKey, accessToken);
+
+      // ✅ UPDATE CACHE
+      cachedLoginState = true;
 
       return true;
     } catch (e) {
@@ -93,11 +87,12 @@ class AuthService {
   }
 
   // =========================
-  // 🔐 CHECK LOGIN STATE
+  // 🔐 CHECK LOGIN STATE (ASYNC)
   // =========================
   static Future<bool> isLoggedIn() async {
     final token = await getAccessToken();
-    return token != null;
+    cachedLoginState = token != null;
+    return cachedLoginState;
   }
 
   // =========================
@@ -107,7 +102,10 @@ class AuthService {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString(_accessTokenKey);
 
-    if (token == null) return null;
+    if (token == null) {
+      cachedLoginState = false;
+      return null;
+    }
 
     if (JwtDecoder.isExpired(token)) {
       await logout();
@@ -123,6 +121,9 @@ class AuthService {
   static Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_accessTokenKey);
+
+    // ✅ UPDATE CACHE
+    cachedLoginState = false;
   }
 
   // =========================

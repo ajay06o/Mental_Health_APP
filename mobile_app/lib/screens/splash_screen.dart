@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../services/auth_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -21,13 +22,23 @@ class _SplashScreenState extends State<SplashScreen>
       duration: const Duration(seconds: 2),
     )..forward();
 
-    // ⏳ Only delay + forward navigation
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        context.go("/login"); 
-        // GoRouter redirect will decide login/home
-      }
-    });
+    _handleNavigation();
+  }
+
+  Future<void> _handleNavigation() async {
+    // ⏳ Let animation play
+    await Future.delayed(const Duration(seconds: 2));
+
+    // 🔐 Check login state
+    final loggedIn = await AuthService.isLoggedIn();
+
+    if (!mounted) return;
+
+    if (loggedIn) {
+      context.go("/home");
+    } else {
+      context.go("/login");
+    }
   }
 
   @override
