@@ -24,7 +24,7 @@ JWT_ISSUER = "mental-health-api"
 # 🔑 PASSWORD HASHING
 # ==============================
 pwd_context = CryptContext(
-    schemes=["bcrypt"],
+    schemes=["argon2", "bcrypt"],
     deprecated="auto"
 )
 
