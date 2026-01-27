@@ -13,7 +13,7 @@ if PROJECT_ROOT not in sys.path:
 # =====================================================
 # IMPORTS
 # =====================================================
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -21,6 +21,7 @@ from sqlalchemy import func
 from jose import jwt, JWTError
 from typing import Optional
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 
 from database import SessionLocal, engine
 from models import User, EmotionHistory
@@ -48,15 +49,15 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="6.4.0",
+    version="6.5.0",
 )
 
 # =====================================================
-# CORS
+# CORS (FIXED)
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # OK for dev + Flutter web
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -113,23 +114,35 @@ def get_current_user(
 # =====================================================
 @app.post("/register", response_model=TokenResponse)
 def register(user: UserCreate, db: Session = Depends(get_db)):
-    if db.query(User).filter(User.email == user.email).first():
+    try:
+        if db.query(User).filter(User.email == user.email).first():
+            raise HTTPException(status_code=400, detail="Email already registered")
+
+        new_user = User(
+            email=user.email,
+            password=hash_password(user.password),
+        )
+
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+
+        return {
+            "access_token": create_access_token({"sub": new_user.email}),
+            "refresh_token": create_refresh_token({"sub": new_user.email}),
+            "token_type": "bearer",
+        }
+
+    except IntegrityError:
+        db.rollback()
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    new_user = User(
-        email=user.email,
-        password=hash_password(user.password),
-    )
-
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-
-    return {
-        "access_token": create_access_token({"sub": new_user.email}),
-        "refresh_token": create_refresh_token({"sub": new_user.email}),
-        "token_type": "bearer",
-    }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Registration failed: {str(e)}"
+        )
 
 @app.post("/login", response_model=TokenResponse)
 def login(
@@ -139,7 +152,10 @@ def login(
     user = db.query(User).filter(User.email == form.username).first()
 
     if not user or not verify_password(form.password, user.password):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials"
+        )
 
     return {
         "access_token": create_access_token({"sub": user.email}),
@@ -147,14 +163,23 @@ def login(
         "token_type": "bearer",
     }
 
+# =====================================================
+# REFRESH TOKEN (FIXED)
+# =====================================================
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
 @app.post("/refresh")
-def refresh(payload: dict):
-    email = verify_refresh_token(payload.get("refresh_token"))
+def refresh(payload: RefreshTokenRequest):
+    email = verify_refresh_token(payload.refresh_token)
 
     if not email:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
-    return {"access_token": create_access_token({"sub": email})}
+    return {
+        "access_token": create_access_token({"sub": email}),
+        "token_type": "bearer",
+    }
 
 # =====================================================
 # EMOTION ROUTES
@@ -226,7 +251,6 @@ def get_history(
 # =====================================================
 # PROFILE APIs
 # =====================================================
-
 @app.get("/profile")
 def get_profile(
     user: User = Depends(get_current_user),
@@ -262,9 +286,9 @@ def get_profile(
         "high_risk": high_risk,
     }
 
-# -----------------------------
+# =====================================================
 # UPDATE PROFILE
-# -----------------------------
+# =====================================================
 class ProfileUpdate(BaseModel):
     email: Optional[str] = None
     password: Optional[str] = None

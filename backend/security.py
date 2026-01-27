@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import os
 
@@ -10,7 +10,7 @@ from jose import jwt, JWTError
 # ==============================
 SECRET_KEY = os.getenv(
     "SECRET_KEY",
-    "CHANGE_THIS_SECRET_KEY",  # ❗ override in production (Render ENV)
+    "CHANGE_THIS_SECRET_KEY",  # ❗ 반드시 production에서 ENV로 설정
 )
 
 ALGORITHM = "HS256"
@@ -24,8 +24,8 @@ JWT_ISSUER = "mental-health-api"
 # 🔑 PASSWORD HASHING
 # ==============================
 pwd_context = CryptContext(
-    schemes=["bcrypt"],   # ✅ keep ONE algorithm
-    deprecated="auto"
+    schemes=["bcrypt"],   # ✅ single, stable algorithm
+    deprecated="auto",
 )
 
 # ==============================
@@ -34,15 +34,12 @@ pwd_context = CryptContext(
 def hash_password(password: str) -> str:
     """
     Hash password safely.
-    IMPORTANT:
-    - Do NOT strip
-    - Do NOT lowercase
-    - Do NOT normalize user input
+    - Do NOT modify user input
+    - bcrypt max limit: 72 bytes
     """
     if not isinstance(password, str):
         raise ValueError("Password must be a string")
 
-    # bcrypt hard limit: 72 bytes
     if len(password.encode("utf-8")) > 72:
         password = password[:72]
 
@@ -74,21 +71,20 @@ def create_access_token(
     if not isinstance(data, dict):
         raise ValueError("Token data must be a dictionary")
 
-    to_encode = data.copy()
-
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     expire = now + timedelta(
         minutes=expires_minutes
         if expires_minutes is not None
         else ACCESS_TOKEN_EXPIRE_MINUTES
     )
 
-    to_encode.update({
+    to_encode = {
+        **data,
         "exp": expire,
         "iat": now,
         "iss": JWT_ISSUER,
         "type": "access",
-    })
+    }
 
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -102,21 +98,22 @@ def create_refresh_token(data: dict) -> str:
     if not isinstance(data, dict):
         raise ValueError("Token data must be a dictionary")
 
-    to_encode = data.copy()
-
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     expire = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
 
-    to_encode.update({
+    to_encode = {
+        **data,
         "exp": expire,
         "iat": now,
         "iss": JWT_ISSUER,
         "type": "refresh",
-    })
+    }
 
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-
+# ==============================
+# 🔍 VERIFY REFRESH TOKEN
+# ==============================
 def verify_refresh_token(token: str) -> Optional[str]:
     """
     Verify refresh token and return user email (sub).
@@ -126,8 +123,13 @@ def verify_refresh_token(token: str) -> Optional[str]:
             token,
             SECRET_KEY,
             algorithms=[ALGORITHM],
-            options={"verify_aud": False},
+            options={
+                "verify_aud": False,
+            },
         )
+
+        if payload.get("iss") != JWT_ISSUER:
+            return None
 
         if payload.get("type") != "refresh":
             return None
