@@ -24,40 +24,29 @@ JWT_ISSUER = "mental-health-api"
 # 🔑 PASSWORD HASHING
 # ==============================
 pwd_context = CryptContext(
-    schemes=["argon2", "bcrypt"],
+    schemes=["bcrypt"],   # ✅ keep ONE algorithm
     deprecated="auto"
 )
-
-# ==============================
-# 🔐 INTERNAL PASSWORD NORMALIZER
-# ==============================
-def _normalize_password(password: str) -> str:
-    """
-    Normalize password for bcrypt.
-    bcrypt supports max 72 bytes.
-    """
-    if not isinstance(password, str):
-        raise ValueError("Password must be a string")
-
-    password = password.strip()
-    if not password:
-        raise ValueError("Password cannot be empty")
-
-    raw = password.encode("utf-8")
-    if len(raw) > 72:
-        raw = raw[:72]
-
-    return raw.decode("utf-8", errors="ignore")
 
 # ==============================
 # 🔐 PASSWORD UTILITIES
 # ==============================
 def hash_password(password: str) -> str:
     """
-    Hash password safely using bcrypt.
+    Hash password safely.
+    IMPORTANT:
+    - Do NOT strip
+    - Do NOT lowercase
+    - Do NOT normalize user input
     """
-    normalized = _normalize_password(password)
-    return pwd_context.hash(normalized)
+    if not isinstance(password, str):
+        raise ValueError("Password must be a string")
+
+    # bcrypt hard limit: 72 bytes
+    if len(password.encode("utf-8")) > 72:
+        password = password[:72]
+
+    return pwd_context.hash(password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -68,8 +57,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return False
 
     try:
-        normalized = _normalize_password(plain_password)
-        return pwd_context.verify(normalized, hashed_password)
+        return pwd_context.verify(plain_password, hashed_password)
     except Exception:
         return False
 
