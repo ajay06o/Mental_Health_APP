@@ -24,7 +24,7 @@ JWT_ISSUER = "mental-health-api"
 # 🔑 PASSWORD HASHING
 # ==============================
 pwd_context = CryptContext(
-    schemes=["bcrypt"],   # ✅ single, stable algorithm
+    schemes=["bcrypt"],
     deprecated="auto",
 )
 
@@ -35,13 +35,18 @@ def hash_password(password: str) -> str:
     """
     Hash password safely.
     - Do NOT modify user input
-    - bcrypt max limit: 72 bytes
+    - bcrypt hard limit: 72 bytes
     """
     if not isinstance(password, str):
         raise ValueError("Password must be a string")
 
-    if len(password.encode("utf-8")) > 72:
-        password = password[:72]
+    raw = password.encode("utf-8")
+
+    # ❗ bcrypt hard limit
+    if len(raw) > 72:
+        raise ValueError(
+            "Password is too long. Please use 72 bytes or fewer (avoid emojis)."
+        )
 
     return pwd_context.hash(password)
 
@@ -65,9 +70,6 @@ def create_access_token(
     data: dict,
     expires_minutes: Optional[int] = None,
 ) -> str:
-    """
-    Create a JWT access token.
-    """
     if not isinstance(data, dict):
         raise ValueError("Token data must be a dictionary")
 
@@ -92,9 +94,6 @@ def create_access_token(
 # 🔁 REFRESH TOKEN
 # ==============================
 def create_refresh_token(data: dict) -> str:
-    """
-    Create a JWT refresh token.
-    """
     if not isinstance(data, dict):
         raise ValueError("Token data must be a dictionary")
 
@@ -115,17 +114,12 @@ def create_refresh_token(data: dict) -> str:
 # 🔍 VERIFY REFRESH TOKEN
 # ==============================
 def verify_refresh_token(token: str) -> Optional[str]:
-    """
-    Verify refresh token and return user email (sub).
-    """
     try:
         payload = jwt.decode(
             token,
             SECRET_KEY,
             algorithms=[ALGORITHM],
-            options={
-                "verify_aud": False,
-            },
+            options={"verify_aud": False},
         )
 
         if payload.get("iss") != JWT_ISSUER:

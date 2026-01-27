@@ -49,15 +49,15 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="6.5.0",
+    version="6.6.0",
 )
 
 # =====================================================
-# CORS (FIXED)
+# CORS
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # OK for dev + Flutter web
+    allow_origins=["*"],   # OK for dev / Flutter web
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -120,7 +120,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 
         new_user = User(
             email=user.email,
-            password=hash_password(user.password),
+            password=hash_password(user.password),  # may raise ValueError
         )
 
         db.add(new_user)
@@ -133,6 +133,10 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
             "token_type": "bearer",
         }
 
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -141,7 +145,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(
             status_code=500,
-            detail=f"Registration failed: {str(e)}"
+            detail="Registration failed due to server error",
         )
 
 @app.post("/login", response_model=TokenResponse)
@@ -154,7 +158,7 @@ def login(
     if not user or not verify_password(form.password, user.password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials"
+            detail="Invalid credentials",
         )
 
     return {
@@ -164,7 +168,7 @@ def login(
     }
 
 # =====================================================
-# REFRESH TOKEN (FIXED)
+# REFRESH TOKEN
 # =====================================================
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
