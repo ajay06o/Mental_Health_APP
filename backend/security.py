@@ -6,7 +6,7 @@ from passlib.context import CryptContext
 from jose import jwt, JWTError
 
 # 🔥 PROOF LOG (REMOVE AFTER DEBUG)
-print("🔥 UPDATED security.py LOADED 🔥")
+print("🔥 UPDATED security.py LOADED (ARGON2) 🔥")
 
 # ==============================
 # 🔐 SECURITY SETTINGS
@@ -24,10 +24,10 @@ REFRESH_TOKEN_EXPIRE_DAYS = 7           # 7 days
 JWT_ISSUER = "mental-health-api"
 
 # ==============================
-# 🔑 PASSWORD HASHING
+# 🔑 PASSWORD HASHING (ARGON2)
 # ==============================
 pwd_context = CryptContext(
-    schemes=["bcrypt"],
+    schemes=["argon2"],   # ✅ modern, secure, NO 72-byte limit
     deprecated="auto",
 )
 
@@ -36,28 +36,23 @@ pwd_context = CryptContext(
 # ==============================
 def hash_password(password: str) -> str:
     """
-    Hash password safely.
-    Rules:
-    - Do NOT modify user input
-    - Reject passwords > 72 bytes (bcrypt limit)
+    Hash password safely using Argon2.
+    - No 72-byte limit
+    - No truncation
+    - Unicode safe
     """
     if not isinstance(password, str):
         raise ValueError("Password must be a string")
 
-    raw = password.encode("utf-8")
-
-    # bcrypt hard limit
-    if len(raw) > 72:
-        raise ValueError(
-            "Password is too long. Please use 72 bytes or fewer (avoid emojis)."
-        )
+    if not password:
+        raise ValueError("Password cannot be empty")
 
     return pwd_context.hash(password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
-    Verify plain password against stored bcrypt hash.
+    Verify password against Argon2 hash.
     """
     if not plain_password or not hashed_password:
         return False
@@ -136,4 +131,3 @@ def verify_refresh_token(token: str) -> Optional[str]:
 
     except JWTError:
         return None
-
