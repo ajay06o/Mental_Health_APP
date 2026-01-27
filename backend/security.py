@@ -5,12 +5,15 @@ import os
 from passlib.context import CryptContext
 from jose import jwt, JWTError
 
+# 🔥 PROOF LOG (REMOVE AFTER DEBUG)
+print("🔥 UPDATED security.py LOADED 🔥")
+
 # ==============================
 # 🔐 SECURITY SETTINGS
 # ==============================
 SECRET_KEY = os.getenv(
     "SECRET_KEY",
-    "CHANGE_THIS_SECRET_KEY",  # ❗ 반드시 production에서 ENV로 설정
+    "CHANGE_THIS_SECRET_KEY",  # ❗ set in Render ENV for production
 )
 
 ALGORITHM = "HS256"
@@ -34,15 +37,16 @@ pwd_context = CryptContext(
 def hash_password(password: str) -> str:
     """
     Hash password safely.
+    Rules:
     - Do NOT modify user input
-    - bcrypt hard limit: 72 bytes
+    - Reject passwords > 72 bytes (bcrypt limit)
     """
     if not isinstance(password, str):
         raise ValueError("Password must be a string")
 
     raw = password.encode("utf-8")
 
-    # ❗ bcrypt hard limit
+    # bcrypt hard limit
     if len(raw) > 72:
         raise ValueError(
             "Password is too long. Please use 72 bytes or fewer (avoid emojis)."
@@ -80,7 +84,7 @@ def create_access_token(
         else ACCESS_TOKEN_EXPIRE_MINUTES
     )
 
-    to_encode = {
+    payload = {
         **data,
         "exp": expire,
         "iat": now,
@@ -88,7 +92,7 @@ def create_access_token(
         "type": "access",
     }
 
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 # ==============================
 # 🔁 REFRESH TOKEN
@@ -100,7 +104,7 @@ def create_refresh_token(data: dict) -> str:
     now = datetime.now(timezone.utc)
     expire = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
 
-    to_encode = {
+    payload = {
         **data,
         "exp": expire,
         "iat": now,
@@ -108,7 +112,7 @@ def create_refresh_token(data: dict) -> str:
         "type": "refresh",
     }
 
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 # ==============================
 # 🔍 VERIFY REFRESH TOKEN
@@ -132,3 +136,4 @@ def verify_refresh_token(token: str) -> Optional[str]:
 
     except JWTError:
         return None
+
