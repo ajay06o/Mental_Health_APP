@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime
 from typing import Optional
 
@@ -19,11 +19,11 @@ class UserCreate(BaseModel):
         description="Password (min 8 chars, strong recommended)",
     )
 
-    @validator("password")
+    @field_validator("password")
+    @classmethod
     def validate_password_strength(cls, value: str):
         """
-        Basic password strength validation.
-        (Argon2 handles hashing securely)
+        Password strength validation (Pydantic v2 compatible)
         """
         if value.islower() or value.isupper():
             raise ValueError("Password must include mixed case letters")
@@ -112,3 +112,14 @@ class ProfileUpdate(BaseModel):
         max_length=128,
         example="NewStrongPass123!",
     )
+
+    @field_validator("password")
+    @classmethod
+    def validate_optional_password(cls, value: Optional[str]):
+        if value is None:
+            return value
+        if value.islower() or value.isupper():
+            raise ValueError("Password must include mixed case letters")
+        if value.isalpha():
+            raise ValueError("Password must include numbers or symbols")
+        return value
