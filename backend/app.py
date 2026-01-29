@@ -41,7 +41,9 @@ from security import (
     verify_refresh_token,
 )
 
-from ai_models.mental_health_model import final_prediction
+# 🧠 BERT EMOTION MODEL
+from ai_models.bert_emotion import predict_emotion
+
 import models
 
 # =====================================================
@@ -54,7 +56,7 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="7.2.1",
+    version="7.3.1",
 )
 
 # =====================================================
@@ -64,11 +66,11 @@ limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 
 # =====================================================
-# CORS (FLUTTER WEB DEV SAFE)
+# CORS (DEV SAFE — LOCK IN PROD)
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # ⚠️ restrict in production
+    allow_origins=["*"],  # 🔒 restrict in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -200,7 +202,7 @@ def refresh(payload: RefreshTokenRequest):
     }
 
 # =====================================================
-# EMOTION ROUTES
+# 🧠 EMOTION ROUTE (BERT — PRODUCTION SAFE)
 # =====================================================
 @app.post("/predict")
 @limiter.limit("10/minute")
@@ -210,18 +212,30 @@ def predict(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    result = final_prediction(data.text)
+    if not data.text.strip():
+        raise HTTPException(status_code=400, detail="Text cannot be empty")
 
-    emotion = result["final_mental_state"]
-    confidence = float(result["confidence"])
+    try:
+        result = predict_emotion(data.text)
+    except Exception:
+        # 🚑 FAIL-SAFE (never crash API)
+        result = {
+            "emotion": "neutral",
+            "confidence": 0.0,
+        }
 
-    severity = {
+    emotion = result["emotion"].lower()
+    confidence = min(max(float(result["confidence"]), 0.0), 1.0)
+
+    severity_map = {
         "happy": 1,
         "sad": 2,
         "anxiety": 3,
         "depression": 4,
         "suicidal": 5,
-    }.get(emotion, 1)
+        "neutral": 1,
+    }
+    severity = severity_map.get(emotion, 1)
 
     record = EmotionHistory(
         user_id=user.id,
@@ -236,9 +250,9 @@ def predict(
     db.refresh(record)
 
     return {
-        "emotion": record.emotion,
-        "confidence": record.confidence,
-        "severity": record.severity,
+        "emotion": emotion,
+        "confidence": confidence,
+        "severity": severity,
         "timestamp": record.timestamp.isoformat(),
     }
 
@@ -321,3 +335,4 @@ def update_profile(
     db.refresh(user)
 
     return {"message": "Profile updated successfully"}
+

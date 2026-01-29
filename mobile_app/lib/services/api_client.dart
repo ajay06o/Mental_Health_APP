@@ -1,21 +1,35 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async'; // ✅ REQUIRED for TimeoutException
 import 'package:http/http.dart' as http;
 import 'auth_service.dart';
 
 class ApiClient {
-  // ✅ Single source of truth (Render backend)
+  // =================================================
+  // 🌍 BACKEND (Single source of truth)
+  // =================================================
   static const String baseUrl =
       "https://mental-health-app-1-rv33.onrender.com";
 
-  static const Duration _timeout = Duration(seconds: 10);
+  // =================================================
+  // ⏱️ TIMEOUTS
+  // =================================================
+  static const Duration _defaultTimeout = Duration(seconds: 12);
+  static const Duration _predictTimeout = Duration(seconds: 45); // BERT-safe
 
-  // ✅ Reusable HTTP client (performance boost)
+  // =================================================
+  // 🔁 HTTP CLIENT (REUSED)
+  // =================================================
   static final http.Client _client = http.Client();
 
-  // =========================
+  // =================================================
+  // 🔒 REFRESH LOCK (PREVENT MULTIPLE REFRESH CALLS)
+  // =================================================
+  static bool _refreshingToken = false;
+
+  // =================================================
   // COMMON HEADERS
-  // =========================
+  // =================================================
   static Future<Map<String, String>> _headers({
     bool json = true,
     bool withAuth = true,
@@ -25,13 +39,8 @@ class ApiClient {
       "Accept": "application/json",
     };
 
-    if (json) {
-      headers["Content-Type"] = "application/json";
-    }
-
-    if (isForm) {
-      headers["Content-Type"] = "application/x-www-form-urlencoded";
-    }
+    if (json) headers["Content-Type"] = "application/json";
+    if (isForm) headers["Content-Type"] = "application/x-www-form-urlencoded";
 
     if (withAuth) {
       final token = await AuthService.getAccessToken();
@@ -43,20 +52,23 @@ class ApiClient {
     return headers;
   }
 
-  // =========================
-  // SAFE REQUEST HANDLER
-  // =========================
+  // =================================================
+  // 🛡️ SAFE REQUEST HANDLER
+  // =================================================
   static Future<http.Response> _safeRequest(
-    Future<http.Response> Function() request,
-  ) async {
+    Future<http.Response> Function() request, {
+    Duration? timeout,
+  }) async {
     try {
-      final response = await request().timeout(_timeout);
+      final response = await request()
+          .timeout(timeout ?? _defaultTimeout);
 
-      // 🔁 Auto refresh token on 401
+      // 🔁 AUTO REFRESH TOKEN
       if (response.statusCode == 401) {
-        final refreshed = await _refreshToken();
+        final refreshed = await _refreshTokenOnce();
         if (refreshed) {
-          return await request().timeout(_timeout);
+          return await request()
+              .timeout(timeout ?? _defaultTimeout);
         } else {
           await AuthService.logout();
         }
@@ -65,29 +77,30 @@ class ApiClient {
       return response;
     } on SocketException {
       throw Exception("No internet connection");
-    } on HttpException {
-      throw Exception("Server error");
+    } on TimeoutException {
+      throw Exception("Request timed out. Please try again.");
     } on FormatException {
-      throw Exception("Invalid response format");
+      throw Exception("Invalid server response");
+    } catch (e) {
+      throw Exception("Unexpected error: $e");
     }
   }
 
-  // =========================
-  // REFRESH TOKEN
-  // =========================
-  static Future<bool> _refreshToken() async {
-    final refreshToken = await AuthService.getRefreshToken();
-    if (refreshToken == null) return false;
+  // =================================================
+  // 🔁 REFRESH TOKEN (SAFE + LOCKED)
+  // =================================================
+  static Future<bool> _refreshTokenOnce() async {
+    if (_refreshingToken) return false;
 
+    _refreshingToken = true;
     try {
+      final refreshToken = await AuthService.getRefreshToken();
+      if (refreshToken == null) return false;
+
       final response = await _client.post(
         Uri.parse("$baseUrl/refresh"),
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: jsonEncode({
-          "refresh_token": refreshToken,
-        }),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"refresh_token": refreshToken}),
       );
 
       if (response.statusCode == 200) {
@@ -95,14 +108,18 @@ class ApiClient {
         await AuthService.saveAccessToken(data["access_token"]);
         return true;
       }
-    } catch (_) {}
+    } catch (_) {
+      return false;
+    } finally {
+      _refreshingToken = false;
+    }
 
     return false;
   }
 
-  // =========================
+  // =================================================
   // GET
-  // =========================
+  // =================================================
   static Future<http.Response> get(String endpoint) {
     return _safeRequest(() async {
       return _client.get(
@@ -112,9 +129,9 @@ class ApiClient {
     });
   }
 
-  // =========================
+  // =================================================
   // POST JSON
-  // =========================
+  // =================================================
   static Future<http.Response> post(
     String endpoint,
     Map<String, dynamic> body,
@@ -128,9 +145,9 @@ class ApiClient {
     });
   }
 
-  // =========================
+  // =================================================
   // POST FORM (LOGIN)
-  // =========================
+  // =================================================
   static Future<http.Response> postForm(
     String endpoint,
     Map<String, String> body,
@@ -146,15 +163,17 @@ class ApiClient {
             ),
             body: body,
           )
-          .timeout(_timeout);
+          .timeout(_defaultTimeout);
+    } on TimeoutException {
+      throw Exception("Login timed out");
     } on SocketException {
       throw Exception("No internet connection");
     }
   }
 
-  // =========================
-  // PUT JSON (PROFILE UPDATE)
-  // =========================
+  // =================================================
+  // PUT JSON
+  // =================================================
   static Future<http.Response> put(
     String endpoint,
     Map<String, dynamic> body,
@@ -168,9 +187,27 @@ class ApiClient {
     });
   }
 
-  // =========================
+  // =================================================
+  // 🧠 PREDICT (BERT-SAFE)
+  // =================================================
+  static Future<http.Response> predict(
+    Map<String, dynamic> body,
+  ) {
+    return _safeRequest(
+      () async {
+        return _client.post(
+          Uri.parse("$baseUrl/predict"),
+          headers: await _headers(),
+          body: jsonEncode(body),
+        );
+      },
+      timeout: _predictTimeout,
+    );
+  }
+
+  // =================================================
   // CLEANUP (OPTIONAL)
-  // =========================
+  // =================================================
   static void dispose() {
     _client.close();
   }

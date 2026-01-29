@@ -1,17 +1,17 @@
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
+
 try:
-    from langdetect import detect  # optional; may not have a wheel on some Python versions
+    from langdetect import detect
 except Exception:
     def detect(text: str) -> str:
-        # Fallback: assume English for safety when langdetect isn't available
         return "en"
 
 from deep_translator import GoogleTranslator
 
 # =====================================================
-# TRAINING DATA (MINIMAL – KEYWORDS HANDLE MOST CASES)
+# 📚 TRAINING DATA (LIGHTWEIGHT BASELINE MODEL)
 # =====================================================
 data = {
     "text": [
@@ -48,9 +48,13 @@ data = {
 
 df = pd.DataFrame(data)
 
+# =====================================================
+# 🔢 VECTORIZER + MODEL
+# =====================================================
 vectorizer = TfidfVectorizer(
     stop_words="english",
-    ngram_range=(1, 3)
+    ngram_range=(1, 3),
+    max_features=5000,
 )
 
 X = vectorizer.fit_transform(df["text"])
@@ -58,20 +62,19 @@ y = df["label"]
 
 model = LogisticRegression(
     max_iter=3000,
-    class_weight="balanced"
+    class_weight="balanced",
 )
 model.fit(X, y)
 
 # =====================================================
-# TRANSLATION (AUTO-DETECT)
+# 🌍 TRANSLATION (SAFE + CACHED)
 # =====================================================
+_translator = GoogleTranslator(source="auto", target="en")
+
 def translate_to_english(text: str) -> str:
     try:
         if detect(text) != "en":
-            try:
-                return GoogleTranslator(source="auto", target="en").translate(text)
-            except Exception:
-                return text
+            return _translator.translate(text)
         return text
     except Exception:
         return text
@@ -82,118 +85,45 @@ def translate_to_english(text: str) -> str:
 def keyword_override(text: str):
     text = text.lower()
 
-    # ================= SUICIDAL (DIRECT + INDIRECT) =================
     suicidal = [
-        # English
-        "want to die", "kill myself", "suicide",
-        "end my life", "ending my life",
-        "self harm", "self-harm",
-        "no reason to live", "better off dead",
-        "can't go on", "can't handle this anymore",
-        "everything should end", "i give up on life",
-        "life is unbearable",
-
-        # Hindi
+        "want to die", "kill myself", "suicide", "end my life",
+        "self harm", "better off dead", "no reason to live",
         "मरना चाहता हूँ", "आत्महत्या", "जीना नहीं चाहता",
-        "खुद को मारना", "मेरी जिंदगी बेकार है",
-        "अब और नहीं सह सकता", "सब खत्म हो जाए",
-
-        # Telugu
-        "చావాలని ఉంది", "ఆత్మహత్య",
-        "బతకాలని లేదు", "నా జీవితం వ్యర్థం",
-        "ఇంకా భరించలేకపోతున్నాను",
+        "చావాలని ఉంది", "ఆత్మహత్య", "బతకాలని లేదు",
     ]
 
-    # ================= DEPRESSION =================
     depression = [
-        # English
-        "depressed", "hopeless", "empty", "numb",
-        "worthless", "tired of life",
-        "lost interest", "no motivation",
-        "mentally exhausted", "burned out",
-        "nothing matters", "emotionally drained",
-
-        # Hindi
-        "डिप्रेशन", "उदास", "निराश",
-        "थक गया हूँ", "मन नहीं लग रहा",
-        "कुछ भी अच्छा नहीं लग रहा",
-
-        # Telugu
-        "డిప్రెషన్", "నిరాశ", "ఖాళీగా ఉంది",
-        "జీవితం మీద ఆసక్తి లేదు",
-        "మానసికంగా అలసిపోయాను",
+        "depressed", "hopeless", "empty", "worthless",
+        "lost interest", "burned out",
+        "डिप्रेशन", "निराश",
+        "డిప్రెషన్", "నిరాశ",
     ]
 
-    # ================= ANGER =================
     angry = [
-        # English
-        "angry", "furious", "frustrated",
-        "irritated", "mad", "annoyed",
-        "rage", "fed up", "angry at everyone",
-
-        # Hindi
-        "गुस्सा", "बहुत गुस्सा",
-        "चिढ़", "नाराज़",
-
-        # Telugu
-        "కోపంగా ఉంది", "చాలా కోపం",
-        "చిరాకు", "విసుగు",
+        "angry", "furious", "frustrated", "rage",
+        "गुस्सा", "नाराज़",
+        "కోపం", "చిరాకు",
     ]
 
-    # ================= ANXIETY / STRESS =================
-    anxiety_stress = [
-        # English
-        "anxious", "anxiety", "stressed",
-        "stress", "worried", "panic",
-        "overthinking", "nervous",
-        "heart racing", "restless",
-        "can't relax", "fearful",
-
-        # Hindi
-        "चिंता", "टेंशन", "डर लग रहा है",
-        "घबराहट", "परेशान",
-        "नींद नहीं आ रही",
-
-        # Telugu
+    anxiety = [
+        "anxious", "stress", "panic", "worried",
+        "चिंता", "टेंशन",
         "ఆందోళన", "టెన్షన్",
-        "భయం గా ఉంది", "ఒత్తిడి",
-        "నిద్ర రావడం లేదు",
     ]
 
-    # ================= SAD =================
     sad = [
-        # English
-        "sad", "feeling low", "down",
-        "lonely", "unhappy", "crying",
-        "miss someone", "heart feels heavy",
-
-        # Hindi
+        "sad", "lonely", "crying",
         "दुखी", "अकेलापन",
-        "रोना आ रहा है",
-
-        # Telugu
-        "బాధగా ఉంది", "ఒంటరిగా ఉంది",
-        "ఏడవాలనిపిస్తుంది",
+        "బాధగా ఉంది",
     ]
 
-    # ================= HAPPY / CALM =================
     happy = [
-        # English
-        "happy", "excited", "joy",
-        "peaceful", "content",
-        "grateful", "relaxed",
-        "feeling good", "positive",
-
-        # Hindi
-        "खुश", "खुशी", "संतोष",
-        "शांत महसूस कर रहा हूँ",
-
-        # Telugu
-        "సంతోషంగా ఉంది", "ఆనందంగా ఉంది",
-        "ప్రశాంతంగా ఉంది", "హ్యాపీగా ఉంది",
+        "happy", "joy", "peaceful", "relaxed",
+        "खुश", "संतोष",
+        "సంతోషంగా ఉంది",
     ]
 
-    # 🚨 PRIORITY ORDER (MOST IMPORTANT)
+    # 🚨 STRICT PRIORITY
     for w in suicidal:
         if w in text:
             return "Suicidal"
@@ -206,7 +136,7 @@ def keyword_override(text: str):
         if w in text:
             return "Angry"
 
-    for w in anxiety_stress:
+    for w in anxiety:
         if w in text:
             return "Anxiety"
 
@@ -221,39 +151,48 @@ def keyword_override(text: str):
     return None
 
 # =====================================================
-# FINAL PREDICTION (SAFE HYBRID)
+# 🧠 FINAL HYBRID PREDICTION (PRODUCTION SAFE)
 # =====================================================
 def final_prediction(text: str) -> dict:
     if not text or not text.strip():
         return {
             "final_mental_state": "Neutral",
-            "confidence": 0.0
+            "confidence": 0.0,
         }
 
-    # 1️⃣ Rule-based override FIRST
-    forced = keyword_override(text)
-    if forced:
+    # 1️⃣ Rule-based override (highest priority)
+    override = keyword_override(text)
+    if override:
         return {
-            "final_mental_state": forced,
-            "confidence": 0.90
+            "final_mental_state": override,
+            "confidence": 0.90 if override == "Suicidal" else 0.85,
         }
 
-    # 2️⃣ Translate → ML predict
+    # 2️⃣ Translate + ML inference
     text_en = translate_to_english(text)
     vec = vectorizer.transform([text_en])
     probs = model.predict_proba(vec)[0]
+
     idx = probs.argmax()
-
     predicted = model.classes_[idx]
+    confidence = float(probs[idx])
 
-    # 3️⃣ SAFE fallback (never default to Happy)
-    if predicted == "Happy" and any(
-        k in text.lower()
-        for k in ["pain", "tired", "empty", "alone", "stress"]
-    ):
+    # 3️⃣ Safety correction (never false-happy)
+    risk_words = ["pain", "tired", "empty", "alone", "stress"]
+    if predicted == "Happy" and any(w in text.lower() for w in risk_words):
         predicted = "Depression"
+        confidence = max(confidence, 0.70)
 
     return {
         "final_mental_state": predicted,
-        "confidence": float(probs[idx])
+        "confidence": round(confidence, 4),
     }
+
+# =====================================================
+# 🔥 MODEL WARM-UP (PREVENT FIRST-CALL DELAY)
+# =====================================================
+try:
+    _ = final_prediction("warm up")
+    print("✅ Mental health model warmed up")
+except Exception as e:
+    print("⚠️ Warm-up failed:", e)
