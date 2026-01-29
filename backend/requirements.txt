@@ -8,6 +8,7 @@ uvicorn[standard]==0.27.1
 # Database / ORM
 # =========================
 sqlalchemy>=2.0.25,<3
+psycopg2-binary==2.9.9     # ✅ REQUIRED for PostgreSQL on Render
 
 # =========================
 # Security & Auth
