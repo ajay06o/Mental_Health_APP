@@ -1,25 +1,33 @@
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Dict, Any
 import os
 
 from passlib.context import CryptContext
 from jose import jwt, JWTError
+from dotenv import load_dotenv
 
-# 🔥 PROOF LOG (REMOVE AFTER DEBUG)
-print("🔥 UPDATED security.py LOADED (ARGON2) 🔥")
+# ==============================
+# 🔐 LOAD ENV VARIABLES
+# ==============================
+load_dotenv()
 
 # ==============================
 # 🔐 SECURITY SETTINGS
 # ==============================
-SECRET_KEY = os.getenv(
-    "SECRET_KEY",
-    "CHANGE_THIS_SECRET_KEY",  # ❗ set in Render ENV for production
+SECRET_KEY = os.getenv("SECRET_KEY")
+
+if not SECRET_KEY:
+    raise RuntimeError("❌ SECRET_KEY not set in environment variables")
+
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
+
+ACCESS_TOKEN_EXPIRE_MINUTES = int(
+    os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30)
 )
 
-ALGORITHM = "HS256"
-
-ACCESS_TOKEN_EXPIRE_MINUTES = 60        # 1 hour
-REFRESH_TOKEN_EXPIRE_DAYS = 7           # 7 days
+REFRESH_TOKEN_EXPIRE_DAYS = int(
+    os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", 7)
+)
 
 JWT_ISSUER = "mental-health-api"
 
@@ -27,7 +35,7 @@ JWT_ISSUER = "mental-health-api"
 # 🔑 PASSWORD HASHING (ARGON2)
 # ==============================
 pwd_context = CryptContext(
-    schemes=["argon2"],   # ✅ modern, secure, NO 72-byte limit
+    schemes=["argon2"],
     deprecated="auto",
 )
 
@@ -36,16 +44,18 @@ pwd_context = CryptContext(
 # ==============================
 def hash_password(password: str) -> str:
     """
-    Hash password safely using Argon2.
+    Hash password using Argon2.
     - No 72-byte limit
-    - No truncation
     - Unicode safe
+    - Memory-hard (GPU resistant)
     """
     if not isinstance(password, str):
         raise ValueError("Password must be a string")
 
-    if not password:
-        raise ValueError("Password cannot be empty")
+    password = password.strip()
+
+    if len(password) < 8:
+        raise ValueError("Password must be at least 8 characters")
 
     return pwd_context.hash(password)
 
@@ -66,11 +76,17 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 # 🎟️ ACCESS TOKEN
 # ==============================
 def create_access_token(
-    data: dict,
+    data: Dict[str, Any],
     expires_minutes: Optional[int] = None,
 ) -> str:
+    """
+    Create short-lived access token.
+    """
     if not isinstance(data, dict):
-        raise ValueError("Token data must be a dictionary")
+        raise ValueError("Token payload must be a dictionary")
+
+    if "sub" not in data:
+        raise ValueError("Token payload must contain 'sub'")
 
     now = datetime.now(timezone.utc)
     expire = now + timedelta(
@@ -80,7 +96,7 @@ def create_access_token(
     )
 
     payload = {
-        **data,
+        "sub": data["sub"],
         "exp": expire,
         "iat": now,
         "iss": JWT_ISSUER,
@@ -92,15 +108,21 @@ def create_access_token(
 # ==============================
 # 🔁 REFRESH TOKEN
 # ==============================
-def create_refresh_token(data: dict) -> str:
+def create_refresh_token(data: Dict[str, Any]) -> str:
+    """
+    Create long-lived refresh token.
+    """
     if not isinstance(data, dict):
-        raise ValueError("Token data must be a dictionary")
+        raise ValueError("Token payload must be a dictionary")
+
+    if "sub" not in data:
+        raise ValueError("Token payload must contain 'sub'")
 
     now = datetime.now(timezone.utc)
     expire = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
 
     payload = {
-        **data,
+        "sub": data["sub"],
         "exp": expire,
         "iat": now,
         "iss": JWT_ISSUER,
@@ -110,9 +132,38 @@ def create_refresh_token(data: dict) -> str:
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 # ==============================
+# 🔍 VERIFY ACCESS TOKEN
+# ==============================
+def verify_access_token(token: str) -> Optional[str]:
+    """
+    Verify access token and return subject (user id / email).
+    """
+    try:
+        payload = jwt.decode(
+            token,
+            SECRET_KEY,
+            algorithms=[ALGORITHM],
+            options={"verify_aud": False},
+        )
+
+        if payload.get("iss") != JWT_ISSUER:
+            return None
+
+        if payload.get("type") != "access":
+            return None
+
+        return payload.get("sub")
+
+    except JWTError:
+        return None
+
+# ==============================
 # 🔍 VERIFY REFRESH TOKEN
 # ==============================
 def verify_refresh_token(token: str) -> Optional[str]:
+    """
+    Verify refresh token and return subject.
+    """
     try:
         payload = jwt.decode(
             token,

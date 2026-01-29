@@ -4,11 +4,14 @@ import 'package:http/http.dart' as http;
 import 'auth_service.dart';
 
 class ApiClient {
-  // ✅ Render backend (single source of truth)
+  // ✅ Single source of truth (Render backend)
   static const String baseUrl =
       "https://mental-health-app-1-rv33.onrender.com";
 
-  static const Duration _timeout = Duration(seconds: 15);
+  static const Duration _timeout = Duration(seconds: 10);
+
+  // ✅ Reusable HTTP client (performance boost)
+  static final http.Client _client = http.Client();
 
   // =========================
   // COMMON HEADERS
@@ -41,25 +44,72 @@ class ApiClient {
   }
 
   // =========================
-  // GET
+  // SAFE REQUEST HANDLER
   // =========================
-  static Future<http.Response> get(String endpoint) async {
+  static Future<http.Response> _safeRequest(
+    Future<http.Response> Function() request,
+  ) async {
     try {
-      final response = await http
-          .get(
-            Uri.parse("$baseUrl$endpoint"),
-            headers: await _headers(),
-          )
-          .timeout(_timeout);
+      final response = await request().timeout(_timeout);
 
+      // 🔁 Auto refresh token on 401
       if (response.statusCode == 401) {
-        await AuthService.logout();
+        final refreshed = await _refreshToken();
+        if (refreshed) {
+          return await request().timeout(_timeout);
+        } else {
+          await AuthService.logout();
+        }
       }
 
       return response;
     } on SocketException {
       throw Exception("No internet connection");
+    } on HttpException {
+      throw Exception("Server error");
+    } on FormatException {
+      throw Exception("Invalid response format");
     }
+  }
+
+  // =========================
+  // REFRESH TOKEN
+  // =========================
+  static Future<bool> _refreshToken() async {
+    final refreshToken = await AuthService.getRefreshToken();
+    if (refreshToken == null) return false;
+
+    try {
+      final response = await _client.post(
+        Uri.parse("$baseUrl/refresh"),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: jsonEncode({
+          "refresh_token": refreshToken,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        await AuthService.saveAccessToken(data["access_token"]);
+        return true;
+      }
+    } catch (_) {}
+
+    return false;
+  }
+
+  // =========================
+  // GET
+  // =========================
+  static Future<http.Response> get(String endpoint) {
+    return _safeRequest(() async {
+      return _client.get(
+        Uri.parse("$baseUrl$endpoint"),
+        headers: await _headers(),
+      );
+    });
   }
 
   // =========================
@@ -68,24 +118,14 @@ class ApiClient {
   static Future<http.Response> post(
     String endpoint,
     Map<String, dynamic> body,
-  ) async {
-    try {
-      final response = await http
-          .post(
-            Uri.parse("$baseUrl$endpoint"),
-            headers: await _headers(),
-            body: jsonEncode(body),
-          )
-          .timeout(_timeout);
-
-      if (response.statusCode == 401) {
-        await AuthService.logout();
-      }
-
-      return response;
-    } on SocketException {
-      throw Exception("No internet connection");
-    }
+  ) {
+    return _safeRequest(() async {
+      return _client.post(
+        Uri.parse("$baseUrl$endpoint"),
+        headers: await _headers(),
+        body: jsonEncode(body),
+      );
+    });
   }
 
   // =========================
@@ -96,7 +136,7 @@ class ApiClient {
     Map<String, String> body,
   ) async {
     try {
-      final response = await http
+      return await _client
           .post(
             Uri.parse("$baseUrl$endpoint"),
             headers: await _headers(
@@ -107,36 +147,31 @@ class ApiClient {
             body: body,
           )
           .timeout(_timeout);
-
-      return response;
     } on SocketException {
       throw Exception("No internet connection");
     }
   }
 
   // =========================
-  // PUT JSON ✅ (PROFILE UPDATE FIX)
+  // PUT JSON (PROFILE UPDATE)
   // =========================
   static Future<http.Response> put(
     String endpoint,
     Map<String, dynamic> body,
-  ) async {
-    try {
-      final response = await http
-          .put(
-            Uri.parse("$baseUrl$endpoint"),
-            headers: await _headers(),
-            body: jsonEncode(body),
-          )
-          .timeout(_timeout);
+  ) {
+    return _safeRequest(() async {
+      return _client.put(
+        Uri.parse("$baseUrl$endpoint"),
+        headers: await _headers(),
+        body: jsonEncode(body),
+      );
+    });
+  }
 
-      if (response.statusCode == 401) {
-        await AuthService.logout();
-      }
-
-      return response;
-    } on SocketException {
-      throw Exception("No internet connection");
-    }
+  // =========================
+  // CLEANUP (OPTIONAL)
+  // =========================
+  static void dispose() {
+    _client.close();
   }
 }

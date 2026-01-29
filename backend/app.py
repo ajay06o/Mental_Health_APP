@@ -18,21 +18,26 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from jose import jwt, JWTError
-from typing import Optional
-from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
+
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from database import SessionLocal, engine
 from models import User, EmotionHistory
-from schemas import EmotionCreate, UserCreate, TokenResponse
+from schemas import (
+    UserCreate,
+    TokenResponse,
+    EmotionCreate,
+    RefreshTokenRequest,
+    ProfileUpdate,
+)
 from security import (
-    SECRET_KEY,
-    ALGORITHM,
     hash_password,
     verify_password,
     create_access_token,
     create_refresh_token,
+    verify_access_token,
     verify_refresh_token,
 )
 
@@ -49,19 +54,39 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="6.6.0",
+    version="7.1.0",
 )
 
 # =====================================================
-# CORS
+# RATE LIMITER
+# =====================================================
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+
+# =====================================================
+# CORS (PRODUCTION READY)
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # OK for dev / Flutter web
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "https://your-flutter-app-domain.com",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# =====================================================
+# SECURITY HEADERS
+# =====================================================
+@app.middleware("http")
+async def security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 # =====================================================
 # ROOT & HEALTH
@@ -85,7 +110,7 @@ def get_db():
         db.close()
 
 # =====================================================
-# AUTH HELPERS
+# AUTH DEPENDENCY
 # =====================================================
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
@@ -93,21 +118,19 @@ def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email = payload.get("sub")
+    email = verify_access_token(token)
 
-        if not email:
-            raise HTTPException(status_code=401, detail="Invalid token")
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
 
-        user = db.query(User).filter(User.email == email).first()
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
 
-        return user
-
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Token error")
+    return user
 
 # =====================================================
 # AUTH ROUTES
@@ -120,7 +143,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 
         new_user = User(
             email=user.email,
-            password=hash_password(user.password),  # may raise ValueError
+            password=hash_password(user.password),
         )
 
         db.add(new_user)
@@ -141,7 +164,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    except Exception as e:
+    except Exception:
         db.rollback()
         raise HTTPException(
             status_code=500,
@@ -149,6 +172,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         )
 
 @app.post("/login", response_model=TokenResponse)
+@limiter.limit("5/minute")
 def login(
     form: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
@@ -170,9 +194,6 @@ def login(
 # =====================================================
 # REFRESH TOKEN
 # =====================================================
-class RefreshTokenRequest(BaseModel):
-    refresh_token: str
-
 @app.post("/refresh")
 def refresh(payload: RefreshTokenRequest):
     email = verify_refresh_token(payload.refresh_token)
@@ -189,6 +210,7 @@ def refresh(payload: RefreshTokenRequest):
 # EMOTION ROUTES
 # =====================================================
 @app.post("/predict")
+@limiter.limit("10/minute")
 def predict(
     data: EmotionCreate,
     user: User = Depends(get_current_user),
@@ -199,13 +221,14 @@ def predict(
     emotion = result["final_mental_state"]
     confidence = float(result["confidence"])
 
-    severity = {
+    severity_map = {
         "happy": 1,
         "sad": 2,
         "anxiety": 3,
         "depression": 4,
         "suicidal": 5,
-    }.get(emotion, 1)
+    }
+    severity = severity_map.get(emotion, 1)
 
     record = EmotionHistory(
         user_id=user.id,
@@ -243,7 +266,6 @@ def get_history(
 
     return [
         {
-            "text": r.text,
             "emotion": r.emotion,
             "confidence": r.confidence,
             "severity": r.severity,
@@ -293,10 +315,6 @@ def get_profile(
 # =====================================================
 # UPDATE PROFILE
 # =====================================================
-class ProfileUpdate(BaseModel):
-    email: Optional[str] = None
-    password: Optional[str] = None
-
 @app.put("/profile")
 def update_profile(
     payload: ProfileUpdate,
@@ -311,7 +329,6 @@ def update_profile(
         )
         if exists:
             raise HTTPException(status_code=400, detail="Email already in use")
-
         user.email = payload.email
 
     if payload.password:

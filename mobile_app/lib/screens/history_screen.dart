@@ -6,12 +6,12 @@ import '../services/predict_service.dart';
 /// EMOTION SYNONYMS (EN / TE / HI)
 /// ===============================
 const Map<String, List<String>> emotionSynonyms = {
-  "happy": ["happy", "joy", "joyful", "glad", "pleased", "సంతోషం", "ఆనందం", "खुशी", "आनंद"],
-  "sad": ["sad", "unhappy", "down", "విషాదం", "దుఃఖం", "उदासी", "दुख"],
-  "anxiety": ["anxiety", "stress", "tense", "worried", "ఆందోళన", "టెన్షన్", "चिंता", "तनाव"],
-  "angry": ["angry", "anger", "mad", "కోపం", "गुस्सा"],
-  "depression": ["depression", "depressed", "hopeless", "empty", "numb", "డిప్రెషన్", "अवसాద"],
-  "suicidal": ["suicide", "suicidal", "die", "end", "kill", "ఆత్మహత్య", "आत్మहत्या"],
+  "happy": ["happy", "joy", "joyful", "సంతోషం", "खुशी"],
+  "sad": ["sad", "unhappy", "విషాదం", "दुख"],
+  "anxiety": ["anxiety", "stress", "ఆందోళన", "चिंता"],
+  "angry": ["angry", "anger", "కోపం", "गुस्सा"],
+  "depression": ["depression", "depressed", "డిప్రెషన్", "अवसाद"],
+  "suicidal": ["suicidal", "suicide", "ఆత్మహత్య", "आत्महत्या"],
 };
 
 class HistoryScreen extends StatefulWidget {
@@ -67,6 +67,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     setState(() => _loading = true);
     final data = await PredictService.fetchHistory();
     if (!mounted) return;
+
     setState(() {
       _allHistory = data;
       _loading = false;
@@ -74,19 +75,21 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   // ===============================
-  // KEYWORD SEARCH
+  // KEYWORD SEARCH (NO TEXT FIELD)
   // ===============================
   List<Map<String, dynamic>> get filteredHistory {
     final keywords = _searchText.toLowerCase().split(RegExp(r'\s+'));
 
     return _allHistory.where((h) {
       final emotion = h["emotion"].toString().toLowerCase();
-      final synonyms = emotionSynonyms[emotion]?.join(" ") ?? emotion;
+      final synonyms = emotionSynonyms[emotion]?.join(" ") ?? "";
 
       final searchable =
-          "${h["text"]} $emotion $synonyms ${h["severity"]}".toLowerCase();
+          "$emotion $synonyms ${h["severity"]} ${h["confidence"]}".toLowerCase();
 
-      if (_selectedEmotion != "all" && emotion != _selectedEmotion) return false;
+      if (_selectedEmotion != "all" && emotion != _selectedEmotion) {
+        return false;
+      }
 
       for (final k in keywords) {
         if (k.isNotEmpty && !searchable.contains(k)) return false;
@@ -96,7 +99,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   // ===============================
-  // 🧠 AI SEMANTIC SEARCH (FINAL FIX)
+  // 🧠 AI SEMANTIC SEARCH
   // ===============================
   Future<void> _runSemanticSearch() async {
     if (_searchText.trim().isEmpty) return;
@@ -110,65 +113,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
       _semanticResults = results;
       _semanticLoading = false;
     });
-  }
-
-  // ===============================
-  // HIGHLIGHT HELPERS
-  // ===============================
-  Widget highlightText(String text) {
-    if (_searchText.isEmpty) return Text(text);
-    final keys = _searchText.split(RegExp(r'\s+'));
-
-    List<TextSpan> spans = [TextSpan(text: text)];
-    for (final k in keys) {
-      if (k.isEmpty) continue;
-      spans = _applyHighlight(spans, k);
-    }
-
-    return RichText(
-      text: TextSpan(style: const TextStyle(color: Colors.black), children: spans),
-    );
-  }
-
-  Widget highlightSemanticText(String text, String emotion) {
-    final keys = emotionSynonyms[emotion.toLowerCase()] ?? [];
-    List<TextSpan> spans = [TextSpan(text: text)];
-
-    for (final k in keys) {
-      spans = _applyHighlight(spans, k);
-    }
-
-    return RichText(
-      text: TextSpan(style: const TextStyle(color: Colors.black), children: spans),
-    );
-  }
-
-  List<TextSpan> _applyHighlight(List<TextSpan> spans, String keyword) {
-    final List<TextSpan> result = [];
-    for (final span in spans) {
-      final text = span.text ?? "";
-      final lower = text.toLowerCase();
-      final key = keyword.toLowerCase();
-
-      if (!lower.contains(key)) {
-        result.add(span);
-        continue;
-      }
-
-      final start = lower.indexOf(key);
-      final end = start + key.length;
-
-      result.add(TextSpan(text: text.substring(0, start)));
-      result.add(TextSpan(
-        text: text.substring(start, end),
-        style: const TextStyle(
-          backgroundColor: Colors.yellow,
-          fontWeight: FontWeight.bold,
-        ),
-      ));
-      result.add(TextSpan(text: text.substring(end)));
-    }
-    return result;
   }
 
   // ===============================
@@ -189,7 +133,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 TextField(
                   controller: _searchController,
                   decoration: const InputDecoration(
-                    hintText: "Search emotions or meaning…",
+                    hintText: "Search emotion, severity, meaning…",
                     prefixIcon: Icon(Icons.search),
                   ),
                   onChanged: (v) {
@@ -230,18 +174,23 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             child: ListTile(
                               title: Text(
                                 h["emotion"].toString().toUpperCase(),
-                                style: const TextStyle(fontWeight: FontWeight.bold),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
-                              subtitle: _semanticMode
-                                  ? highlightSemanticText(h["text"], h["emotion"])
-                                  : highlightText(h["text"]),
+                              subtitle: Text(
+                                "Confidence: ${(h["confidence"] * 100).toStringAsFixed(1)}%",
+                              ),
                               trailing: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   Text("S${h["severity"]}"),
                                   if (_semanticMode)
-                                    const Icon(Icons.auto_awesome,
-                                        size: 14, color: Colors.deepPurple),
+                                    const Icon(
+                                      Icons.auto_awesome,
+                                      size: 14,
+                                      color: Colors.deepPurple,
+                                    ),
                                 ],
                               ),
                             ),
