@@ -13,17 +13,13 @@ if PROJECT_ROOT not in sys.path:
 # =====================================================
 # IMPORTS
 # =====================================================
-from fastapi import FastAPI, Depends, HTTPException, status, Request, Response
+from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
-
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
 
 from database import SessionLocal, engine
 from models import User, EmotionHistory
@@ -56,54 +52,19 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="8.0.3",
+    version="9.0.0",
 )
 
 # =====================================================
-# RATE LIMITER (USED FOR OTHER ROUTES ONLY)
-# =====================================================
-limiter = Limiter(key_func=get_remote_address)
-app.state.limiter = limiter
-
-@app.exception_handler(RateLimitExceeded)
-async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
-    return Response(
-        content="Too many requests. Please try again later.",
-        status_code=429,
-        headers={
-            "Access-Control-Allow-Origin": request.headers.get("origin", "*"),
-            "Access-Control-Allow-Credentials": "true",
-            "Access-Control-Allow-Headers": "*",
-            "Access-Control-Allow-Methods": "*",
-        },
-    )
-
-# =====================================================
-# ✅ CORS (FLUTTER WEB + PROD SAFE)
+# ✅ CORS — FINAL & STABLE
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost",
-        "http://127.0.0.1",
-    ],
-    allow_origin_regex=r"http://localhost:\d+",
+    allow_origins=["*"],  # allow all during development
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Authorization"],
 )
-
-# =====================================================
-# SECURITY HEADERS
-# =====================================================
-@app.middleware("http")
-async def security_headers(request: Request, call_next):
-    response = await call_next(request)
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    return response
 
 # =====================================================
 # ROOT & HEALTH
@@ -207,11 +168,10 @@ def refresh(payload: RefreshTokenRequest):
     }
 
 # =====================================================
-# 🧠 EMOTION PREDICTION (RATE LIMIT REMOVED ✅)
+# 🧠 EMOTION PREDICTION
 # =====================================================
 @app.post("/predict")
 def predict(
-    request: Request,
     data: EmotionCreate,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -219,30 +179,17 @@ def predict(
     if not data.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
-    try:
-        result = predict_emotion(data.text)
-    except Exception:
-        result = {"emotion": "neutral", "confidence": 0.0}
+    result = predict_emotion(data.text)
 
     emotion = result["emotion"].lower()
-    confidence = max(0.0, min(float(result["confidence"]), 1.0))
-
-    severity_map = {
-        "happy": 1,
-        "sad": 2,
-        "anxiety": 3,
-        "depression": 4,
-        "suicidal": 5,
-        "neutral": 1,
-    }
-    severity = severity_map.get(emotion, 1)
+    confidence = float(result["confidence"])
 
     record = EmotionHistory(
         user_id=user.id,
         text=data.text,
         emotion=emotion,
         confidence=confidence,
-        severity=severity,
+        severity=1,
     )
 
     db.add(record)
@@ -252,7 +199,6 @@ def predict(
     return {
         "emotion": emotion,
         "confidence": confidence,
-        "severity": severity,
         "timestamp": record.timestamp.isoformat(),
     }
 
@@ -289,27 +235,9 @@ def profile(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    total_entries = db.query(func.count(EmotionHistory.id)).filter(
-        EmotionHistory.user_id == user.id
-    ).scalar() or 0
-
-    avg_severity = db.query(func.avg(EmotionHistory.severity)).filter(
-        EmotionHistory.user_id == user.id
-    ).scalar() or 0.0
-
-    high_risk = (
-        db.query(EmotionHistory)
-        .filter(EmotionHistory.user_id == user.id, EmotionHistory.severity >= 4)
-        .first()
-        is not None
-    )
-
     return {
         "user_id": user.id,
         "email": user.email,
-        "total_entries": int(total_entries),
-        "avg_severity": round(float(avg_severity), 2),
-        "high_risk": high_risk,
     }
 
 # =====================================================
@@ -322,14 +250,7 @@ def update_profile(
     db: Session = Depends(get_db),
 ):
     if payload.email:
-        exists = db.query(User).filter(
-            User.email == payload.email,
-            User.id != user.id,
-        ).first()
-        if exists:
-            raise HTTPException(status_code=400, detail="Email already in use")
         user.email = payload.email
-
     if payload.password:
         user.password = hash_password(payload.password)
 
