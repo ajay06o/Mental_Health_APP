@@ -16,6 +16,7 @@ if PROJECT_ROOT not in sys.path:
 from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.responses import Response
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -52,19 +53,35 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="9.0.0",
+    version="10.0.0",
 )
 
 # =====================================================
-# ✅ CORS — FINAL & STABLE
+# ✅ CORS — CORRECT & BROWSER SAFE
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # allow all during development
+    allow_origins=["http://localhost", "http://127.0.0.1"],
+    allow_origin_regex=r"http://localhost:\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# =====================================================
+# ✅ GLOBAL OPTIONS HANDLER (CRITICAL)
+# =====================================================
+@app.options("/{path:path}")
+def options_handler(path: str, request: Request):
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": request.headers.get("origin", "*"),
+            "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
+            "Access-Control-Allow-Headers": "Authorization,Content-Type",
+            "Access-Control-Allow-Credentials": "true",
+        },
+    )
 
 # =====================================================
 # ROOT & HEALTH
@@ -117,17 +134,13 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == user.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    try:
-        new_user = User(
-            email=user.email,
-            password=hash_password(user.password),
-        )
-        db.add(new_user)
-        db.commit()
-        db.refresh(new_user)
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(status_code=400, detail="Email already registered")
+    new_user = User(
+        email=user.email,
+        password=hash_password(user.password),
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
 
     return {
         "access_token": create_access_token({"sub": new_user.email}),
@@ -142,10 +155,7 @@ def login(
 ):
     user = db.query(User).filter(User.email == form.username).first()
     if not user or not verify_password(form.password, user.password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-        )
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
     return {
         "access_token": create_access_token({"sub": user.email}),
@@ -168,7 +178,7 @@ def refresh(payload: RefreshTokenRequest):
     }
 
 # =====================================================
-# 🧠 EMOTION PREDICTION
+# 🧠 PREDICT
 # =====================================================
 @app.post("/predict")
 def predict(
@@ -176,19 +186,13 @@ def predict(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if not data.text.strip():
-        raise HTTPException(status_code=400, detail="Text cannot be empty")
-
     result = predict_emotion(data.text)
-
-    emotion = result["emotion"].lower()
-    confidence = float(result["confidence"])
 
     record = EmotionHistory(
         user_id=user.id,
         text=data.text,
-        emotion=emotion,
-        confidence=confidence,
+        emotion=result["emotion"],
+        confidence=float(result["confidence"]),
         severity=1,
     )
 
@@ -197,8 +201,8 @@ def predict(
     db.refresh(record)
 
     return {
-        "emotion": emotion,
-        "confidence": confidence,
+        "emotion": record.emotion,
+        "confidence": record.confidence,
         "timestamp": record.timestamp.isoformat(),
     }
 
@@ -231,14 +235,8 @@ def history(
 # PROFILE
 # =====================================================
 @app.get("/profile")
-def profile(
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    return {
-        "user_id": user.id,
-        "email": user.email,
-    }
+def profile(user: User = Depends(get_current_user)):
+    return {"email": user.email}
 
 # =====================================================
 # UPDATE PROFILE
@@ -255,6 +253,4 @@ def update_profile(
         user.password = hash_password(payload.password)
 
     db.commit()
-    db.refresh(user)
-
-    return {"message": "Profile updated successfully"}
+    return {"message": "Profile updated"}
