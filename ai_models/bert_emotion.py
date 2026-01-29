@@ -1,74 +1,32 @@
 # ai_models/bert_emotion.py
 # =====================================================
-# 🧠 DISTILBERT EMOTION MODEL (RENDER-STABLE)
+# ⚡ LIGHTWEIGHT EMOTION CLASSIFIER (RENDER FREE SAFE)
 # =====================================================
 
+import joblib
 import os
 
-# 🚨 FORCE CPU (MANDATORY FOR RENDER)
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "emotion_model.pkl")
 
-from transformers import pipeline
+print("🧠 Loading lightweight emotion model...")
 
-print("🧠 Loading DistilBERT emotion model at startup (CPU only)...")
+model = joblib.load(MODEL_PATH)
 
-# =====================================================
-# ✅ LOAD MODEL ONCE AT STARTUP
-# =====================================================
-classifier = pipeline(
-    task="text-classification",
-    model="bhadresh-savani/distilbert-base-uncased-emotion",
-    device=-1,          # CPU ONLY
-    truncation=True,
-)
+print("✅ Lightweight emotion model loaded")
 
-print("✅ DistilBERT emotion model loaded successfully")
-
-# =====================================================
-# 🔥 PREDICTION FUNCTION (FAST & SAFE)
-# =====================================================
 def predict_emotion(text: str) -> dict:
-    """
-    Predict emotion from user text.
-    Safe for low-memory servers.
-    """
-
     if not text or not text.strip():
-        return {
-            "emotion": "neutral",
-            "confidence": 0.0,
-        }
+        return {"emotion": "neutral", "confidence": 0.0}
 
     try:
-        # Limit input length (CRITICAL)
-        result = classifier(text[:512])[0]
-
-        raw_emotion = result["label"].lower()
-        confidence = round(float(result["score"]), 4)
-
-        # =============================================
-        # 🛡️ EMOTION NORMALIZATION (APP STANDARD)
-        # =============================================
-        emotion_map = {
-            "joy": "happy",
-            "sadness": "sad",
-            "fear": "anxiety",
-            "anger": "angry",
-            "love": "happy",
-            "surprise": "neutral",
-        }
-
-        emotion = emotion_map.get(raw_emotion, raw_emotion)
+        prediction = model.predict([text])[0]
+        confidence = max(model.predict_proba([text])[0])
 
         return {
-            "emotion": emotion,
-            "confidence": confidence,
+            "emotion": prediction,
+            "confidence": round(float(confidence), 4),
         }
 
     except Exception as e:
-        print("❌ Emotion prediction error:", e)
-        return {
-            "emotion": "neutral",
-            "confidence": 0.0,
-        }
+        print("❌ Prediction error:", e)
+        return {"emotion": "neutral", "confidence": 0.0}
