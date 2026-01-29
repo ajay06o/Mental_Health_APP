@@ -1,14 +1,40 @@
+# =========================
 # Python
+# =========================
 venv/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
-# Flutter
+# =========================
+# Flutter / Dart
+# =========================
 build/
 .dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
 
-# Environment
+# =========================
+# IDE / Editor
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# Environment Variables
+# =========================
 .env
+backend/.env
 
-# Database (optional for production)
+# =========================
+# Database (Local Dev Only)
+# =========================
 *.db
+
+# =========================
+# OS Files
+# =========================
+.DS_Store
+Thumbs.db
