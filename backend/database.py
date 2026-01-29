@@ -3,38 +3,32 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 # ==============================
-# 📂 BASE DIRECTORY
-# ==============================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# ==============================
 # 🗄️ DATABASE URL
 # ==============================
+# - PostgreSQL on Render (production)
+# - SQLite locally (development fallback)
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    f"sqlite:///{os.path.join(BASE_DIR, 'mental_health.db')}"
+    "sqlite:///./mental_health.db",
 )
 
 # ==============================
 # ⚙️ ENGINE CONFIGURATION
 # ==============================
+connect_args = {}
+
+# SQLite requires special thread handling
 if DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(
-        DATABASE_URL,
-        connect_args={"check_same_thread": False},
-        pool_pre_ping=True,
-    )
-else:
-    # PostgreSQL (Render / Production)
-    engine = create_engine(
-        DATABASE_URL,
-        pool_pre_ping=True,
-        pool_size=5,
-        max_overflow=10,
-    )
+    connect_args = {"check_same_thread": False}
+
+engine = create_engine(
+    DATABASE_URL,
+    connect_args=connect_args,
+    pool_pre_ping=True,   # prevents stale DB connections
+)
 
 # ==============================
-# 🔁 SESSION
+# 🔁 SESSION FACTORY
 # ==============================
 SessionLocal = sessionmaker(
     autocommit=False,
@@ -46,4 +40,3 @@ SessionLocal = sessionmaker(
 # 📦 BASE MODEL
 # ==============================
 Base = declarative_base()
-

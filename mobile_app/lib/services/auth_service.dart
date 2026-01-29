@@ -12,7 +12,6 @@ class AuthService {
 
   /// Cached login state (used by router / splash)
   static bool cachedLoginState = false;
-
   static bool _initialized = false;
 
   // =========================
@@ -46,7 +45,20 @@ class AuthService {
       },
     );
 
-    if (response.statusCode != 200) return false;
+    // 🔴 HANDLE VALIDATION ERRORS (422)
+    if (response.statusCode == 422) {
+      final error = jsonDecode(response.body);
+      print("REGISTER VALIDATION ERROR: $error");
+      return false;
+    }
+
+    // 🔴 HANDLE SERVER ERRORS
+    if (response.statusCode != 200) {
+      print(
+        "REGISTER FAILED ${response.statusCode}: ${response.body}",
+      );
+      return false;
+    }
 
     final data = jsonDecode(response.body);
     return await _saveTokensFromResponse(data);
@@ -64,7 +76,17 @@ class AuthService {
       },
     );
 
-    if (response.statusCode != 200) return false;
+    if (response.statusCode == 401) {
+      print("LOGIN FAILED: Invalid credentials");
+      return false;
+    }
+
+    if (response.statusCode != 200) {
+      print(
+        "LOGIN ERROR ${response.statusCode}: ${response.body}",
+      );
+      return false;
+    }
 
     final data = jsonDecode(response.body);
     return await _saveTokensFromResponse(data);
@@ -77,8 +99,8 @@ class AuthService {
     String email,
     String password,
   ) async {
-    final ok = await register(email, password);
-    if (!ok) return false;
+    final registered = await register(email, password);
+    if (!registered) return false;
 
     return await login(email, password);
   }
@@ -95,7 +117,6 @@ class AuthService {
 
   // =========================
   // 🎟️ GET ACCESS TOKEN
-  // (USED BY ApiClient)
   // =========================
   static Future<String?> getAccessToken() async {
     final prefs = await SharedPreferences.getInstance();
@@ -114,7 +135,6 @@ class AuthService {
 
   // =========================
   // 🔁 GET REFRESH TOKEN
-  // (USED BY ApiClient)
   // =========================
   static Future<String?> getRefreshToken() async {
     final prefs = await SharedPreferences.getInstance();
@@ -123,7 +143,6 @@ class AuthService {
 
   // =========================
   // 💾 SAVE ACCESS TOKEN ONLY
-  // ✅ REQUIRED BY ApiClient REFRESH FLOW
   // =========================
   static Future<void> saveAccessToken(String accessToken) async {
     if (JwtDecoder.isExpired(accessToken)) return;
@@ -144,11 +163,11 @@ class AuthService {
     final refreshToken = data["refresh_token"];
 
     if (accessToken == null || JwtDecoder.isExpired(accessToken)) {
+      print("TOKEN ERROR: Invalid or expired access token");
       return false;
     }
 
     final prefs = await SharedPreferences.getInstance();
-
     await prefs.setString(_accessTokenKey, accessToken);
 
     if (refreshToken != null) {
@@ -178,4 +197,3 @@ class AuthService {
     await prefs.remove(_refreshTokenKey);
   }
 }
-
