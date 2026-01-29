@@ -58,7 +58,7 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="8.0.0",
+    version="8.0.1",
 )
 
 # =====================================================
@@ -75,7 +75,7 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     )
 
 # =====================================================
-# ✅ CORS (FLUTTER WEB + PROD SAFE)
+# CORS (FLUTTER WEB SAFE)
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
@@ -86,7 +86,7 @@ app.add_middleware(
 )
 
 # =====================================================
-# ✅ PRE-FLIGHT HANDLER (CRITICAL)
+# PRE-FLIGHT HANDLER (IMPORTANT)
 # =====================================================
 @app.middleware("http")
 async def handle_preflight(request: Request, call_next):
@@ -207,11 +207,12 @@ def refresh(payload: RefreshTokenRequest):
     }
 
 # =====================================================
-# EMOTION PREDICTION
+# EMOTION PREDICTION (FIXED)
 # =====================================================
 @app.post("/predict")
 @limiter.limit("10/minute")
 def predict(
+    request: Request,   # 🔥 REQUIRED FOR SLOWAPI
     data: EmotionCreate,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
