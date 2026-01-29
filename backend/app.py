@@ -56,11 +56,11 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="8.0.2",
+    version="8.0.3",
 )
 
 # =====================================================
-# RATE LIMITER
+# RATE LIMITER (USED FOR OTHER ROUTES ONLY)
 # =====================================================
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
@@ -70,6 +70,12 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     return Response(
         content="Too many requests. Please try again later.",
         status_code=429,
+        headers={
+            "Access-Control-Allow-Origin": request.headers.get("origin", "*"),
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Allow-Methods": "*",
+        },
     )
 
 # =====================================================
@@ -84,7 +90,7 @@ app.add_middleware(
     allow_origin_regex=r"http://localhost:\d+",
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],  # REQUIRED for Authorization
+    allow_headers=["*"],
     expose_headers=["Authorization"],
 )
 
@@ -201,12 +207,11 @@ def refresh(payload: RefreshTokenRequest):
     }
 
 # =====================================================
-# EMOTION PREDICTION
+# 🧠 EMOTION PREDICTION (RATE LIMIT REMOVED ✅)
 # =====================================================
 @app.post("/predict")
-@limiter.limit("10/minute")
 def predict(
-    request: Request,  # REQUIRED for slowapi
+    request: Request,
     data: EmotionCreate,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
