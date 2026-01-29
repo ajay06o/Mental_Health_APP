@@ -44,6 +44,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
     _loadHistory();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   // ===============================
   // STATE RESTORE
   // ===============================
@@ -61,21 +67,36 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   // ===============================
-  // LOAD HISTORY
+  // LOAD HISTORY (SAFE)
   // ===============================
   Future<void> _loadHistory() async {
     setState(() => _loading = true);
-    final data = await PredictService.fetchHistory();
-    if (!mounted) return;
 
-    setState(() {
-      _allHistory = data;
-      _loading = false;
-    });
+    try {
+      final data = await PredictService.fetchHistory();
+      if (!mounted) return;
+
+      setState(() {
+        _allHistory = data;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.toString().replaceAll("Exception:", "").trim(),
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   // ===============================
-  // KEYWORD SEARCH (NO TEXT FIELD)
+  // KEYWORD SEARCH
   // ===============================
   List<Map<String, dynamic>> get filteredHistory {
     final keywords = _searchText.toLowerCase().split(RegExp(r'\s+'));
@@ -99,20 +120,35 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   // ===============================
-  // 🧠 AI SEMANTIC SEARCH
+  // 🧠 AI SEMANTIC SEARCH (OPTIONAL)
   // ===============================
   Future<void> _runSemanticSearch() async {
     if (_searchText.trim().isEmpty) return;
 
     setState(() => _semanticLoading = true);
 
-    final results = await PredictService.semanticSearch(_searchText);
+    try {
+      // ⚠️ Semantic search may not exist
+      final results = await PredictService.semanticSearch(_searchText);
 
-    if (!mounted) return;
-    setState(() {
-      _semanticResults = results;
-      _semanticLoading = false;
-    });
+      if (!mounted) return;
+      setState(() {
+        _semanticResults = results;
+        _semanticLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _semanticResults = [];
+        _semanticLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Semantic search not available"),
+        ),
+      );
+    }
   }
 
   // ===============================

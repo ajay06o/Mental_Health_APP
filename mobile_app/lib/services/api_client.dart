@@ -1,12 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:async'; // ✅ REQUIRED for TimeoutException
+import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'auth_service.dart';
 
 class ApiClient {
   // =================================================
-  // 🌍 BACKEND (Single source of truth)
+  // 🌍 BACKEND
   // =================================================
   static const String baseUrl =
       "https://mental-health-app-1-rv33.onrender.com";
@@ -15,20 +15,20 @@ class ApiClient {
   // ⏱️ TIMEOUTS
   // =================================================
   static const Duration _defaultTimeout = Duration(seconds: 12);
-  static const Duration _predictTimeout = Duration(seconds: 45); // BERT-safe
+  static const Duration _predictTimeout = Duration(seconds: 45);
 
   // =================================================
-  // 🔁 HTTP CLIENT (REUSED)
+  // 🔁 HTTP CLIENT
   // =================================================
   static final http.Client _client = http.Client();
 
   // =================================================
-  // 🔒 REFRESH LOCK (PREVENT MULTIPLE REFRESH CALLS)
+  // 🔒 REFRESH LOCK (QUEUE REQUESTS)
   // =================================================
-  static bool _refreshingToken = false;
+  static Future<String?>? _refreshFuture;
 
   // =================================================
-  // COMMON HEADERS
+  // HEADERS (SAFE)
   // =================================================
   static Future<Map<String, String>> _headers({
     bool json = true,
@@ -44,77 +44,82 @@ class ApiClient {
 
     if (withAuth) {
       final token = await AuthService.getAccessToken();
-      if (token != null) {
-        headers["Authorization"] = "Bearer $token";
+      if (token == null) {
+        throw Exception("User not authenticated");
       }
+      headers["Authorization"] = "Bearer $token";
     }
 
     return headers;
   }
 
   // =================================================
-  // 🛡️ SAFE REQUEST HANDLER
+  // 🛡️ SAFE REQUEST HANDLER (WEB SAFE)
   // =================================================
   static Future<http.Response> _safeRequest(
     Future<http.Response> Function() request, {
     Duration? timeout,
   }) async {
     try {
-      final response = await request()
-          .timeout(timeout ?? _defaultTimeout);
+      final response =
+          await request().timeout(timeout ?? _defaultTimeout);
 
-      // 🔁 AUTO REFRESH TOKEN
-      if (response.statusCode == 401) {
-        final refreshed = await _refreshTokenOnce();
-        if (refreshed) {
-          return await request()
-              .timeout(timeout ?? _defaultTimeout);
-        } else {
-          await AuthService.logout();
-        }
+      if (response.statusCode != 401) {
+        return response;
       }
 
-      return response;
-    } on SocketException {
-      throw Exception("No internet connection");
+      // 🔁 HANDLE 401 — REFRESH & RETRY ONCE
+      final token = await _refreshTokenQueued();
+      if (token == null) {
+        await AuthService.logout();
+        throw Exception("Session expired. Please login again.");
+      }
+
+      return await request().timeout(timeout ?? _defaultTimeout);
     } on TimeoutException {
       throw Exception("Request timed out. Please try again.");
+    } on SocketException {
+      throw Exception("No internet connection");
     } on FormatException {
       throw Exception("Invalid server response");
-    } catch (e) {
-      throw Exception("Unexpected error: $e");
     }
   }
 
   // =================================================
-  // 🔁 REFRESH TOKEN (SAFE + LOCKED)
+  // 🔁 REFRESH TOKEN (QUEUED)
   // =================================================
-  static Future<bool> _refreshTokenOnce() async {
-    if (_refreshingToken) return false;
+  static Future<String?> _refreshTokenQueued() {
+    _refreshFuture ??= _refreshToken();
+    return _refreshFuture!.whenComplete(() {
+      _refreshFuture = null;
+    });
+  }
 
-    _refreshingToken = true;
+  static Future<String?> _refreshToken() async {
+    final refreshToken = await AuthService.getRefreshToken();
+    if (refreshToken == null) return null;
+
     try {
-      final refreshToken = await AuthService.getRefreshToken();
-      if (refreshToken == null) return false;
+      final response = await _client
+          .post(
+            Uri.parse("$baseUrl/refresh"),
+            headers: {"Content-Type": "application/json"},
+            body: jsonEncode({"refresh_token": refreshToken}),
+          )
+          .timeout(_defaultTimeout);
 
-      final response = await _client.post(
-        Uri.parse("$baseUrl/refresh"),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"refresh_token": refreshToken}),
-      );
+      if (response.statusCode != 200) return null;
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        await AuthService.saveAccessToken(data["access_token"]);
-        return true;
-      }
+      final data = jsonDecode(response.body);
+      final newToken = data["access_token"];
+
+      if (newToken == null) return null;
+
+      await AuthService.saveAccessToken(newToken);
+      return newToken;
     } catch (_) {
-      return false;
-    } finally {
-      _refreshingToken = false;
+      return null;
     }
-
-    return false;
   }
 
   // =================================================
@@ -188,7 +193,7 @@ class ApiClient {
   }
 
   // =================================================
-  // 🧠 PREDICT (BERT-SAFE)
+  // 🧠 PREDICT (LONG TIMEOUT)
   // =================================================
   static Future<http.Response> predict(
     Map<String, dynamic> body,
@@ -206,7 +211,7 @@ class ApiClient {
   }
 
   // =================================================
-  // CLEANUP (OPTIONAL)
+  // CLEANUP
   // =================================================
   static void dispose() {
     _client.close();

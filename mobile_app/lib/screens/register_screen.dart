@@ -48,25 +48,28 @@ class _RegisterScreenState extends State<RegisterScreen>
   }
 
   // =========================
-  // REGISTER + AUTO LOGIN
+  // REGISTER + AUTO LOGIN (FIXED)
   // =========================
   Future<void> _handleRegister() async {
-    FocusScope.of(context).unfocus();
+    if (_isLoading) return;
 
+    FocusScope.of(context).unfocus();
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
 
-    final success = await AuthService.registerAndAutoLogin(
-      _emailController.text.trim(),
-      _passwordController.text.trim(),
-    );
+    try {
+      final success = await AuthService.registerAndAutoLogin(
+        _emailController.text.trim(),
+        _passwordController.text.trim(),
+      );
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    setState(() => _isLoading = false);
+      if (!success) {
+        throw Exception("Registration failed");
+      }
 
-    if (success) {
       setState(() => _showSuccess = true);
       _successController.forward();
 
@@ -74,13 +77,19 @@ class _RegisterScreenState extends State<RegisterScreen>
       if (!mounted) return;
 
       context.go("/home");
-    } else {
+    } catch (e) {
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Registration failed. Please try again."),
+        SnackBar(
+          content: Text(e.toString().replaceAll("Exception:", "").trim()),
           backgroundColor: Colors.red,
         ),
       );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -163,7 +172,6 @@ class _RegisterScreenState extends State<RegisterScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // ================= HERO ICON =================
                 const Hero(
                   tag: "auth-hero",
                   child: Icon(
@@ -173,7 +181,6 @@ class _RegisterScreenState extends State<RegisterScreen>
                   ),
                 ),
                 const SizedBox(height: 16),
-
                 const Text(
                   "Create Account",
                   style: TextStyle(
@@ -186,10 +193,9 @@ class _RegisterScreenState extends State<RegisterScreen>
                   "Start your mental wellness journey",
                   style: TextStyle(color: Colors.grey.shade600),
                 ),
-
                 const SizedBox(height: 30),
 
-                // ================= EMAIL =================
+                // EMAIL
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
@@ -200,10 +206,9 @@ class _RegisterScreenState extends State<RegisterScreen>
                     icon: Icons.email_outlined,
                   ),
                 ),
-
                 const SizedBox(height: 16),
 
-                // ================= PASSWORD =================
+                // PASSWORD
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
@@ -223,10 +228,9 @@ class _RegisterScreenState extends State<RegisterScreen>
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 16),
 
-                // ================= CONFIRM PASSWORD =================
+                // CONFIRM PASSWORD
                 TextFormField(
                   controller: _confirmPasswordController,
                   obscureText: _obscureConfirm,
@@ -247,10 +251,9 @@ class _RegisterScreenState extends State<RegisterScreen>
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 30),
 
-                // ================= REGISTER BUTTON =================
+                // BUTTON
                 SizedBox(
                   width: double.infinity,
                   height: 54,
@@ -275,7 +278,6 @@ class _RegisterScreenState extends State<RegisterScreen>
                           ),
                   ),
                 ),
-
                 const SizedBox(height: 18),
 
                 TextButton(

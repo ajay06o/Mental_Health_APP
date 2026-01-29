@@ -10,12 +10,11 @@ class AuthService {
   static const String _accessTokenKey = "access_token";
   static const String _refreshTokenKey = "refresh_token";
 
-  /// Cached login state (used by router / splash)
   static bool cachedLoginState = false;
   static bool _initialized = false;
 
   // =========================
-  // 🔁 INIT (USED IN main.dart / splash)
+  // 🔁 INIT
   // =========================
   static Future<void> init() async {
     if (_initialized) return;
@@ -45,18 +44,8 @@ class AuthService {
       },
     );
 
-    // 🔴 HANDLE VALIDATION ERRORS (422)
-    if (response.statusCode == 422) {
-      final error = jsonDecode(response.body);
-      print("REGISTER VALIDATION ERROR: $error");
-      return false;
-    }
-
-    // 🔴 HANDLE SERVER ERRORS
     if (response.statusCode != 200) {
-      print(
-        "REGISTER FAILED ${response.statusCode}: ${response.body}",
-      );
+      print("REGISTER FAILED ${response.statusCode}: ${response.body}");
       return false;
     }
 
@@ -71,20 +60,13 @@ class AuthService {
     final response = await ApiClient.postForm(
       "/login",
       {
-        "username": email.trim(), // OAuth2 expects "username"
+        "username": email.trim(),
         "password": password.trim(),
       },
     );
 
-    if (response.statusCode == 401) {
-      print("LOGIN FAILED: Invalid credentials");
-      return false;
-    }
-
     if (response.statusCode != 200) {
-      print(
-        "LOGIN ERROR ${response.statusCode}: ${response.body}",
-      );
+      print("LOGIN FAILED ${response.statusCode}: ${response.body}");
       return false;
     }
 
@@ -93,7 +75,7 @@ class AuthService {
   }
 
   // =========================
-  // 🚀 REGISTER + AUTO LOGIN
+  // 🚀 REGISTER + AUTO LOGIN (ADDED)
   // =========================
   static Future<bool> registerAndAutoLogin(
     String email,
@@ -106,7 +88,7 @@ class AuthService {
   }
 
   // =========================
-  // 🔎 CHECK LOGIN STATE
+  // 🔎 LOGIN STATE
   // =========================
   static Future<bool> isLoggedIn() async {
     if (!_initialized) {
@@ -120,21 +102,20 @@ class AuthService {
   // =========================
   static Future<String?> getAccessToken() async {
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString(_accessTokenKey);
+    final accessToken = prefs.getString(_accessTokenKey);
 
-    if (token == null) return null;
+    if (accessToken == null) return null;
 
-    if (JwtDecoder.isExpired(token)) {
-      // ❌ Do NOT logout here
-      // ApiClient will refresh token automatically
-      return null;
+    if (!JwtDecoder.isExpired(accessToken)) {
+      return accessToken;
     }
 
-    return token;
+    // 🔁 Try refresh
+    return await _refreshAccessToken();
   }
 
   // =========================
-  // 🔁 GET REFRESH TOKEN
+  // 🔁 GET REFRESH TOKEN (ADDED)
   // =========================
   static Future<String?> getRefreshToken() async {
     final prefs = await SharedPreferences.getInstance();
@@ -142,19 +123,57 @@ class AuthService {
   }
 
   // =========================
-  // 💾 SAVE ACCESS TOKEN ONLY
+  // 💾 SAVE ACCESS TOKEN (ADDED)
   // =========================
   static Future<void> saveAccessToken(String accessToken) async {
     if (JwtDecoder.isExpired(accessToken)) return;
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_accessTokenKey, accessToken);
-
     cachedLoginState = true;
   }
 
   // =========================
-  // 💾 SAVE TOKENS (LOGIN / REGISTER)
+  // 🔁 REFRESH ACCESS TOKEN
+  // =========================
+  static Future<String?> _refreshAccessToken() async {
+    final refreshToken = await getRefreshToken();
+
+    if (refreshToken == null) {
+      await logout();
+      return null;
+    }
+
+    try {
+      final response = await ApiClient.post(
+        "/refresh",
+        {"refresh_token": refreshToken},
+      );
+
+      if (response.statusCode != 200) {
+        await logout();
+        return null;
+      }
+
+      final data = jsonDecode(response.body);
+      final newAccessToken = data["access_token"];
+
+      if (newAccessToken == null ||
+          JwtDecoder.isExpired(newAccessToken)) {
+        await logout();
+        return null;
+      }
+
+      await saveAccessToken(newAccessToken);
+      return newAccessToken;
+    } catch (_) {
+      await logout();
+      return null;
+    }
+  }
+
+  // =========================
+  // 💾 SAVE TOKENS
   // =========================
   static Future<bool> _saveTokensFromResponse(
     Map<String, dynamic> data,
@@ -163,7 +182,6 @@ class AuthService {
     final refreshToken = data["refresh_token"];
 
     if (accessToken == null || JwtDecoder.isExpired(accessToken)) {
-      print("TOKEN ERROR: Invalid or expired access token");
       return false;
     }
 
