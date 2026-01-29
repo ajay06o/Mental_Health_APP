@@ -43,9 +43,7 @@ from security import (
     verify_refresh_token,
 )
 
-# AI model
 from ai_models.bert_emotion import predict_emotion
-
 import models
 
 # =====================================================
@@ -58,7 +56,7 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="8.0.1",
+    version="8.0.2",
 )
 
 # =====================================================
@@ -75,24 +73,20 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     )
 
 # =====================================================
-# CORS (FLUTTER WEB SAFE)
+# ✅ CORS (FLUTTER WEB + PROD SAFE)
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
+    allow_origins=[
+        "http://localhost",
+        "http://127.0.0.1",
+    ],
     allow_origin_regex=r"http://localhost:\d+",
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"],  # REQUIRED for Authorization
+    expose_headers=["Authorization"],
 )
-
-# =====================================================
-# PRE-FLIGHT HANDLER (IMPORTANT)
-# =====================================================
-@app.middleware("http")
-async def handle_preflight(request: Request, call_next):
-    if request.method == "OPTIONS":
-        return Response(status_code=200)
-    return await call_next(request)
 
 # =====================================================
 # SECURITY HEADERS
@@ -207,12 +201,12 @@ def refresh(payload: RefreshTokenRequest):
     }
 
 # =====================================================
-# EMOTION PREDICTION (FIXED)
+# EMOTION PREDICTION
 # =====================================================
 @app.post("/predict")
 @limiter.limit("10/minute")
 def predict(
-    request: Request,   # 🔥 REQUIRED FOR SLOWAPI
+    request: Request,  # REQUIRED for slowapi
     data: EmotionCreate,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
