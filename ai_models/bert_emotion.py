@@ -1,56 +1,81 @@
+# =====================================================
+# 🧠 DISTILBERT EMOTION MODEL (PRODUCTION SAFE)
+# =====================================================
+
+import os
+
+# 🚨 FORCE CPU (VERY IMPORTANT FOR RENDER)
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
+
 from transformers import pipeline
-import torch
 
 # =====================================================
-# 🧠 LOAD MODEL ON STARTUP (NOT PER REQUEST)
+# GLOBAL MODEL (LAZY LOADED)
 # =====================================================
-DEVICE = 0 if torch.cuda.is_available() else -1
+_classifier = None
 
-_classifier = pipeline(
-    "text-classification",
-    model="bhadresh-savani/distilbert-base-uncased-emotion",
-    device=DEVICE,
-)
 
-print("✅ BERT emotion model loaded")
+def _load_model():
+    """
+    Load DistilBERT emotion model ONLY ONCE.
+    This prevents out-of-memory crashes on Render.
+    """
+    global _classifier
+
+    if _classifier is None:
+        print("🧠 Loading DistilBERT emotion model (CPU only)...")
+
+        _classifier = pipeline(
+            task="text-classification",
+            model="bhadresh-savani/distilbert-base-uncased-emotion",
+            device=-1,              # ✅ CPU ONLY
+            truncation=True,
+        )
+
+        print("✅ DistilBERT emotion model loaded")
+
+    return _classifier
+
 
 # =====================================================
 # 🔥 PREDICTION FUNCTION
 # =====================================================
 def predict_emotion(text: str) -> dict:
+    """
+    Predict emotion from user text.
+    Safe for production and low-memory servers.
+    """
+
     if not text or not text.strip():
         return {
             "emotion": "neutral",
             "confidence": 0.0,
         }
 
-    # Run inference
-    result = _classifier(text, truncation=True)[0]
+    classifier = _load_model()
 
-    emotion = result["label"].lower()
+    # Limit text length (VERY IMPORTANT)
+    result = classifier(text[:512])[0]
+
+    raw_emotion = result["label"].lower()
     confidence = round(float(result["score"]), 4)
 
-    # Safety mapping
-    if emotion == "joy":
-        emotion = "happy"
-    elif emotion == "sadness":
-        emotion = "sad"
-    elif emotion == "fear":
-        emotion = "anxiety"
-    elif emotion == "anger":
-        emotion = "angry"
+    # =================================================
+    # 🛡️ EMOTION NORMALIZATION (APP STANDARD)
+    # =================================================
+    emotion_map = {
+        "joy": "happy",
+        "sadness": "sad",
+        "fear": "anxiety",
+        "anger": "angry",
+        "love": "happy",
+        "surprise": "neutral",
+    }
+
+    emotion = emotion_map.get(raw_emotion, raw_emotion)
 
     return {
         "emotion": emotion,
         "confidence": confidence,
     }
-
-
-# =====================================================
-# 🔥 WARM-UP (VERY IMPORTANT)
-# =====================================================
-try:
-    _ = predict_emotion("warm up")
-    print("🔥 BERT warmed up successfully")
-except Exception as e:
-    print("⚠️ BERT warm-up failed:", e)

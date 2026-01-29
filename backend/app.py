@@ -16,12 +16,14 @@ if PROJECT_ROOT not in sys.path:
 from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from database import SessionLocal, engine
 from models import User, EmotionHistory
@@ -41,13 +43,13 @@ from security import (
     verify_refresh_token,
 )
 
-# 🧠 BERT EMOTION MODEL
+# 🧠 DistilBERT emotion model (lazy-loaded)
 from ai_models.bert_emotion import predict_emotion
 
 import models
 
 # =====================================================
-# DB INIT
+# DB INIT (RUN ONCE)
 # =====================================================
 models.Base.metadata.create_all(bind=engine)
 
@@ -56,7 +58,7 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="7.3.1",
+    version="7.3.2",
 )
 
 # =====================================================
@@ -64,6 +66,15 @@ app = FastAPI(
 # =====================================================
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return HTTPException(
+        status_code=429,
+        detail="Too many requests. Please try again later.",
+    )
+
 
 # =====================================================
 # CORS (DEV SAFE — LOCK IN PROD)
@@ -202,7 +213,7 @@ def refresh(payload: RefreshTokenRequest):
     }
 
 # =====================================================
-# 🧠 EMOTION ROUTE (BERT — PRODUCTION SAFE)
+# 🧠 EMOTION ROUTE (DISTILBERT — SAFE)
 # =====================================================
 @app.post("/predict")
 @limiter.limit("10/minute")
@@ -218,14 +229,10 @@ def predict(
     try:
         result = predict_emotion(data.text)
     except Exception:
-        # 🚑 FAIL-SAFE (never crash API)
-        result = {
-            "emotion": "neutral",
-            "confidence": 0.0,
-        }
+        result = {"emotion": "neutral", "confidence": 0.0}
 
     emotion = result["emotion"].lower()
-    confidence = min(max(float(result["confidence"]), 0.0), 1.0)
+    confidence = max(0.0, min(float(result["confidence"]), 1.0))
 
     severity_map = {
         "happy": 1,
@@ -289,18 +296,29 @@ def profile(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    total_entries = db.query(func.count(EmotionHistory.id)).filter(
-        EmotionHistory.user_id == user.id
-    ).scalar() or 0
+    total_entries = (
+        db.query(func.count(EmotionHistory.id))
+        .filter(EmotionHistory.user_id == user.id)
+        .scalar()
+        or 0
+    )
 
-    avg_severity = db.query(func.avg(EmotionHistory.severity)).filter(
-        EmotionHistory.user_id == user.id
-    ).scalar() or 0.0
+    avg_severity = (
+        db.query(func.avg(EmotionHistory.severity))
+        .filter(EmotionHistory.user_id == user.id)
+        .scalar()
+        or 0.0
+    )
 
-    high_risk = db.query(EmotionHistory).filter(
-        EmotionHistory.user_id == user.id,
-        EmotionHistory.severity >= 4,
-    ).first() is not None
+    high_risk = (
+        db.query(EmotionHistory)
+        .filter(
+            EmotionHistory.user_id == user.id,
+            EmotionHistory.severity >= 4,
+        )
+        .first()
+        is not None
+    )
 
     return {
         "user_id": user.id,
@@ -335,4 +353,3 @@ def update_profile(
     db.refresh(user)
 
     return {"message": "Profile updated successfully"}
-
