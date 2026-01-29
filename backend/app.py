@@ -13,7 +13,13 @@ if PROJECT_ROOT not in sys.path:
 # =====================================================
 # IMPORTS
 # =====================================================
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import (
+    FastAPI,
+    Depends,
+    HTTPException,
+    status,
+    Request,          # ✅ REQUIRED FOR SLOWAPI
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -54,7 +60,7 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="7.1.0",
+    version="7.1.1",
 )
 
 # =====================================================
@@ -82,7 +88,7 @@ app.add_middleware(
 # SECURITY HEADERS
 # =====================================================
 @app.middleware("http")
-async def security_headers(request, call_next):
+async def security_headers(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -174,6 +180,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 @app.post("/login", response_model=TokenResponse)
 @limiter.limit("5/minute")
 def login(
+    request: Request,    # ✅ REQUIRED FOR SLOWAPI
     form: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
@@ -212,6 +219,7 @@ def refresh(payload: RefreshTokenRequest):
 @app.post("/predict")
 @limiter.limit("10/minute")
 def predict(
+    request: Request,    # ✅ REQUIRED FOR SLOWAPI
     data: EmotionCreate,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
