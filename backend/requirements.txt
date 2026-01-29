@@ -26,12 +26,9 @@ email-validator==2.1.0.post1
 python-multipart==0.0.6
 
 # =========================
-# Rate Limiting
+# AI / ML (LIGHTWEIGHT — RENDER SAFE)
 # =========================
-slowapi==0.1.9
+scikit-learn==1.5.2
+joblib==1.4.2
+numpy>=1.26,<2
 
-# =========================
-# AI / ML
-# =========================
-transformers>=4.41,<5
-torch>=2.5.0,<3

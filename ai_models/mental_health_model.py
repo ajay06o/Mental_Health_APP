@@ -1,198 +1,96 @@
-import pandas as pd
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
+import os
+import joblib
+import numpy as np
 
-try:
-    from langdetect import detect
-except Exception:
-    def detect(text: str) -> str:
-        return "en"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-from deep_translator import GoogleTranslator
+MODEL_PATH = os.path.join(BASE_DIR, "emotion_model.pkl")
+VECTORIZER_PATH = os.path.join(BASE_DIR, "vectorizer.pkl")
 
-# =====================================================
-# 📚 TRAINING DATA (LIGHTWEIGHT BASELINE MODEL)
-# =====================================================
-data = {
-    "text": [
-        "I feel happy",
-        "I am sad",
-        "I feel anxious",
-        "I am stressed",
-        "I feel depressed",
-        "I feel empty",
-        "I am angry",
-        "I am frustrated",
-        "I want to die",
-        "I think about ending my life",
-        "I feel calm",
-        "I am tired of everything",
-        "I can't sleep properly",
-    ],
-    "label": [
-        "Happy",
-        "Sad",
-        "Anxiety",
-        "Anxiety",
-        "Depression",
-        "Depression",
-        "Angry",
-        "Angry",
-        "Suicidal",
-        "Suicidal",
-        "Neutral",
-        "Depression",
-        "Anxiety",
-    ],
-}
+_model = None
+_vectorizer = None
 
-df = pd.DataFrame(data)
 
-# =====================================================
-# 🔢 VECTORIZER + MODEL
-# =====================================================
-vectorizer = TfidfVectorizer(
-    stop_words="english",
-    ngram_range=(1, 3),
-    max_features=5000,
-)
+def _load():
+    global _model, _vectorizer
+    if _model is None or _vectorizer is None:
+        print("🧠 Loading emotion model (lightweight)...")
+        _model = joblib.load(MODEL_PATH)
+        _vectorizer = joblib.load(VECTORIZER_PATH)
+        print("✅ Emotion model loaded")
 
-X = vectorizer.fit_transform(df["text"])
-y = df["label"]
 
-model = LogisticRegression(
-    max_iter=3000,
-    class_weight="balanced",
-)
-model.fit(X, y)
-
-# =====================================================
-# 🌍 TRANSLATION (SAFE + CACHED)
-# =====================================================
-_translator = GoogleTranslator(source="auto", target="en")
-
-def translate_to_english(text: str) -> str:
-    try:
-        if detect(text) != "en":
-            return _translator.translate(text)
-        return text
-    except Exception:
-        return text
-
-# =====================================================
-# 🚨 MULTI-LANGUAGE KEYWORD OVERRIDE (EN / HI / TE)
-# =====================================================
-def keyword_override(text: str):
-    text = text.lower()
+# ===============================
+# 🚨 KEYWORD OVERRIDE (FAST + SAFE)
+# ===============================
+def _keyword_override(text: str):
+    t = text.lower()
 
     suicidal = [
         "want to die", "kill myself", "suicide", "end my life",
-        "self harm", "better off dead", "no reason to live",
-        "मरना चाहता हूँ", "आत्महत्या", "जीना नहीं चाहता",
-        "చావాలని ఉంది", "ఆత్మహత్య", "బతకాలని లేదు",
+        "आत्महत्या", "मरना चाहता", "చావాలని ఉంది",
     ]
 
     depression = [
-        "depressed", "hopeless", "empty", "worthless",
-        "lost interest", "burned out",
-        "डिप्रेशन", "निराश",
-        "డిప్రెషన్", "నిరాశ",
-    ]
-
-    angry = [
-        "angry", "furious", "frustrated", "rage",
-        "गुस्सा", "नाराज़",
-        "కోపం", "చిరాకు",
+        "depressed", "hopeless", "empty",
+        "डिप्रेशन", "డిప్రెషన్",
     ]
 
     anxiety = [
-        "anxious", "stress", "panic", "worried",
-        "चिंता", "टेंशन",
-        "ఆందోళన", "టెన్షన్",
+        "anxious", "stress", "panic",
+        "चिंता", "ఆందోళన",
     ]
 
-    sad = [
-        "sad", "lonely", "crying",
-        "दुखी", "अकेलापन",
-        "బాధగా ఉంది",
-    ]
+    angry = ["angry", "furious", "rage", "गुस्सा", "కోపం"]
+    sad = ["sad", "crying", "दुख", "బాధ"]
+    happy = ["happy", "joy", "peaceful", "खुश", "సంతోష"]
 
-    happy = [
-        "happy", "joy", "peaceful", "relaxed",
-        "खुश", "संतोष",
-        "సంతోషంగా ఉంది",
-    ]
-
-    # 🚨 STRICT PRIORITY
     for w in suicidal:
-        if w in text:
-            return "Suicidal"
-
+        if w in t:
+            return "Suicidal", 0.90
     for w in depression:
-        if w in text:
-            return "Depression"
-
+        if w in t:
+            return "Depression", 0.85
     for w in angry:
-        if w in text:
-            return "Angry"
-
+        if w in t:
+            return "Angry", 0.80
     for w in anxiety:
-        if w in text:
-            return "Anxiety"
-
+        if w in t:
+            return "Anxiety", 0.80
     for w in sad:
-        if w in text:
-            return "Sad"
-
+        if w in t:
+            return "Sad", 0.75
     for w in happy:
-        if w in text:
-            return "Happy"
+        if w in t:
+            return "Happy", 0.75
 
     return None
 
-# =====================================================
-# 🧠 FINAL HYBRID PREDICTION (PRODUCTION SAFE)
-# =====================================================
-def final_prediction(text: str) -> dict:
-    if not text or not text.strip():
-        return {
-            "final_mental_state": "Neutral",
-            "confidence": 0.0,
-        }
 
-    # 1️⃣ Rule-based override (highest priority)
-    override = keyword_override(text)
+# ===============================
+# 🧠 FINAL PREDICTION
+# ===============================
+def predict_emotion(text: str) -> dict:
+    if not text or not text.strip():
+        return {"emotion": "Neutral", "confidence": 0.0}
+
+    override = _keyword_override(text)
     if override:
         return {
-            "final_mental_state": override,
-            "confidence": 0.90 if override == "Suicidal" else 0.85,
+            "emotion": override[0],
+            "confidence": override[1],
         }
 
-    # 2️⃣ Translate + ML inference
-    text_en = translate_to_english(text)
-    vec = vectorizer.transform([text_en])
-    probs = model.predict_proba(vec)[0]
+    _load()
 
-    idx = probs.argmax()
-    predicted = model.classes_[idx]
+    vec = _vectorizer.transform([text])
+    probs = _model.predict_proba(vec)[0]
+
+    idx = int(np.argmax(probs))
+    emotion = _model.classes_[idx]
     confidence = float(probs[idx])
 
-    # 3️⃣ Safety correction (never false-happy)
-    risk_words = ["pain", "tired", "empty", "alone", "stress"]
-    if predicted == "Happy" and any(w in text.lower() for w in risk_words):
-        predicted = "Depression"
-        confidence = max(confidence, 0.70)
-
     return {
-        "final_mental_state": predicted,
+        "emotion": emotion,
         "confidence": round(confidence, 4),
     }
-
-# =====================================================
-# 🔥 MODEL WARM-UP (PREVENT FIRST-CALL DELAY)
-# =====================================================
-try:
-    _ = final_prediction("warm up")
-    print("✅ Mental health model warmed up")
-except Exception as e:
-    print("⚠️ Warm-up failed:", e)
