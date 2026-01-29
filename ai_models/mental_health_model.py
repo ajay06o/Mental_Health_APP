@@ -1,3 +1,7 @@
+# =====================================================
+# 🧠 LIGHTWEIGHT MENTAL HEALTH MODEL (PRODUCTION SAFE)
+# =====================================================
+
 import os
 import joblib
 import numpy as np
@@ -11,6 +15,9 @@ _model = None
 _vectorizer = None
 
 
+# =====================================================
+# 🔄 LOAD MODEL (LAZY, MEMORY SAFE)
+# =====================================================
 def _load():
     global _model, _vectorizer
     if _model is None or _vectorizer is None:
@@ -20,9 +27,9 @@ def _load():
         print("✅ Emotion model loaded")
 
 
-# ===============================
+# =====================================================
 # 🚨 KEYWORD OVERRIDE (FAST + SAFE)
-# ===============================
+# =====================================================
 def _keyword_override(text: str):
     t = text.lower()
 
@@ -67,9 +74,9 @@ def _keyword_override(text: str):
     return None
 
 
-# ===============================
-# 🧠 FINAL PREDICTION
-# ===============================
+# =====================================================
+# 🧠 BASE PREDICTION (INTERNAL)
+# =====================================================
 def predict_emotion(text: str) -> dict:
     if not text or not text.strip():
         return {"emotion": "Neutral", "confidence": 0.0}
@@ -93,4 +100,20 @@ def predict_emotion(text: str) -> dict:
     return {
         "emotion": emotion,
         "confidence": round(confidence, 4),
+    }
+
+
+# =====================================================
+# ✅ PUBLIC API (WHAT app.py EXPECTS)
+# =====================================================
+def final_prediction(text: str) -> dict:
+    """
+    Stable public interface for FastAPI.
+    DO NOT REMOVE — app.py depends on this.
+    """
+    result = predict_emotion(text)
+
+    return {
+        "final_mental_state": result["emotion"],
+        "confidence": result["confidence"],
     }

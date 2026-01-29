@@ -38,7 +38,7 @@ from security import (
     verify_refresh_token,
 )
 
-# ✅ CORRECT MODEL (DO NOT RENAME FILE)
+# ✅ DO NOT RENAME — CORRECT MODEL IMPORT
 from ai_models.mental_health_model import final_prediction
 
 import models
@@ -53,7 +53,7 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="FINAL-1.0.0",
+    version="1.0.0",
 )
 
 # =====================================================
@@ -61,7 +61,7 @@ app = FastAPI(
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Flutter web uses random localhost ports
+    allow_origins=["*"],  # Flutter Web uses random localhost ports
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -72,7 +72,11 @@ app.add_middleware(
 # =====================================================
 @app.get("/")
 def root():
-    return {"status": "OK", "message": "Mental Health Backend is running 🚀"}
+    return {
+        "status": "OK",
+        "message": "Mental Health Backend is running 🚀",
+    }
+
 
 @app.get("/health")
 def health():
@@ -93,6 +97,7 @@ def get_db():
 # =====================================================
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
+
 def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
@@ -107,7 +112,10 @@ def get_current_user(
 
     user = db.query(User).filter(User.email == email).first()
     if not user:
-        raise HTTPException(status_code=401, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+        )
 
     return user
 
@@ -117,7 +125,10 @@ def get_current_user(
 @app.post("/register", response_model=TokenResponse)
 def register(user: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == user.email).first():
-        raise HTTPException(status_code=400, detail="Email already registered")
+        raise HTTPException(
+            status_code=400,
+            detail="Email already registered",
+        )
 
     new_user = User(
         email=user.email,
@@ -134,14 +145,19 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         "token_type": "bearer",
     }
 
+
 @app.post("/login", response_model=TokenResponse)
 def login(
     form: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
     user = db.query(User).filter(User.email == form.username).first()
+
     if not user or not verify_password(form.password, user.password):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+        )
 
     return {
         "access_token": create_access_token({"sub": user.email}),
@@ -155,8 +171,12 @@ def login(
 @app.post("/refresh")
 def refresh(payload: RefreshTokenRequest):
     email = verify_refresh_token(payload.refresh_token)
+
     if not email:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+        )
 
     return {
         "access_token": create_access_token({"sub": email}),
@@ -164,7 +184,7 @@ def refresh(payload: RefreshTokenRequest):
     }
 
 # =====================================================
-# 🧠 PREDICT (FINAL, LIGHTWEIGHT, STABLE)
+# 🧠 EMOTION PREDICTION (LIGHTWEIGHT + SAFE)
 # =====================================================
 @app.post("/predict")
 def predict(
@@ -225,9 +245,12 @@ def profile(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    total_entries = db.query(func.count(EmotionHistory.id)).filter(
-        EmotionHistory.user_id == user.id
-    ).scalar() or 0
+    total_entries = (
+        db.query(func.count(EmotionHistory.id))
+        .filter(EmotionHistory.user_id == user.id)
+        .scalar()
+        or 0
+    )
 
     return {
         "email": user.email,
@@ -245,9 +268,10 @@ def update_profile(
 ):
     if payload.email:
         user.email = payload.email
+
     if payload.password:
         user.password = hash_password(payload.password)
 
     db.commit()
-    return {"message": "Profile updated successfully"}
 
+    return {"message": "Profile updated successfully"}
