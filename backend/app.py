@@ -13,14 +13,12 @@ if PROJECT_ROOT not in sys.path:
 # =====================================================
 # IMPORTS
 # =====================================================
-from fastapi import FastAPI, Depends, HTTPException, status, Request
+from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from fastapi.responses import Response
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from sqlalchemy.exc import IntegrityError
 
 from database import SessionLocal, engine
 from models import User, EmotionHistory
@@ -40,7 +38,9 @@ from security import (
     verify_refresh_token,
 )
 
-from ai_models.bert_emotion import predict_emotion
+# ✅ CORRECT MODEL (DO NOT RENAME FILE)
+from ai_models.mental_health_model import final_prediction
+
 import models
 
 # =====================================================
@@ -53,35 +53,19 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="10.0.0",
+    version="FINAL-1.0.0",
 )
 
 # =====================================================
-# ✅ CORS — CORRECT & BROWSER SAFE
+# ✅ SINGLE, SAFE CORS CONFIG (FLUTTER WEB OK)
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost", "http://127.0.0.1"],
-    allow_origin_regex=r"http://localhost:\d+",
+    allow_origins=["*"],  # Flutter web uses random localhost ports
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# =====================================================
-# ✅ GLOBAL OPTIONS HANDLER (CRITICAL)
-# =====================================================
-@app.options("/{path:path}")
-def options_handler(path: str, request: Request):
-    return Response(
-        status_code=200,
-        headers={
-            "Access-Control-Allow-Origin": request.headers.get("origin", "*"),
-            "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
-            "Access-Control-Allow-Headers": "Authorization,Content-Type",
-            "Access-Control-Allow-Credentials": "true",
-        },
-    )
 
 # =====================================================
 # ROOT & HEALTH
@@ -114,6 +98,7 @@ def get_current_user(
     db: Session = Depends(get_db),
 ):
     email = verify_access_token(token)
+
     if not email:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -138,6 +123,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         email=user.email,
         password=hash_password(user.password),
     )
+
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
@@ -178,7 +164,7 @@ def refresh(payload: RefreshTokenRequest):
     }
 
 # =====================================================
-# 🧠 PREDICT
+# 🧠 PREDICT (FINAL, LIGHTWEIGHT, STABLE)
 # =====================================================
 @app.post("/predict")
 def predict(
@@ -186,12 +172,12 @@ def predict(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    result = predict_emotion(data.text)
+    result = final_prediction(data.text)
 
     record = EmotionHistory(
         user_id=user.id,
         text=data.text,
-        emotion=result["emotion"],
+        emotion=result["final_mental_state"].lower(),
         confidence=float(result["confidence"]),
         severity=1,
     )
@@ -235,8 +221,18 @@ def history(
 # PROFILE
 # =====================================================
 @app.get("/profile")
-def profile(user: User = Depends(get_current_user)):
-    return {"email": user.email}
+def profile(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    total_entries = db.query(func.count(EmotionHistory.id)).filter(
+        EmotionHistory.user_id == user.id
+    ).scalar() or 0
+
+    return {
+        "email": user.email,
+        "total_entries": int(total_entries),
+    }
 
 # =====================================================
 # UPDATE PROFILE
@@ -253,4 +249,5 @@ def update_profile(
         user.password = hash_password(payload.password)
 
     db.commit()
-    return {"message": "Profile updated"}
+    return {"message": "Profile updated successfully"}
+
