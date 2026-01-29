@@ -13,7 +13,7 @@ if PROJECT_ROOT not in sys.path:
 # =====================================================
 # IMPORTS
 # =====================================================
-from fastapi import FastAPI, Depends, HTTPException, status, Request
+from fastapi import FastAPI, Depends, HTTPException, status, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
@@ -43,13 +43,13 @@ from security import (
     verify_refresh_token,
 )
 
-# 🧠 DistilBERT emotion model (lazy-loaded)
+# 🧠 AI model
 from ai_models.bert_emotion import predict_emotion
 
 import models
 
 # =====================================================
-# DB INIT (RUN ONCE)
+# DB INIT
 # =====================================================
 models.Base.metadata.create_all(bind=engine)
 
@@ -58,7 +58,7 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="7.3.2",
+    version="7.3.3",
 )
 
 # =====================================================
@@ -67,34 +67,43 @@ app = FastAPI(
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 
-
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
-    return HTTPException(
+    return Response(
+        content="Too many requests. Please try again later.",
         status_code=429,
-        detail="Too many requests. Please try again later.",
     )
 
+# =====================================================
+# ✅ PRODUCTION-SAFE CORS
+# =====================================================
+ALLOWED_ORIGINS = [
+    "http://localhost",
+    "http://localhost:52733",
+    "http://127.0.0.1",
+    "https://mental-health-app-1-rv33.onrender.com",
+]
 
-# =====================================================
-# CORS (DEV SAFE — LOCK IN PROD)
-# =====================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 🔒 restrict in production
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+    expose_headers=["Authorization"],
 )
 
 # =====================================================
-# SECURITY HEADERS
+# SECURITY HEADERS (CORS-SAFE)
 # =====================================================
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
+
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
     return response
 
 # =====================================================
@@ -213,7 +222,7 @@ def refresh(payload: RefreshTokenRequest):
     }
 
 # =====================================================
-# 🧠 EMOTION ROUTE (DISTILBERT — SAFE)
+# 🧠 EMOTION PREDICTION
 # =====================================================
 @app.post("/predict")
 @limiter.limit("10/minute")
