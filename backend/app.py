@@ -43,13 +43,13 @@ from security import (
     verify_refresh_token,
 )
 
-# 🧠 AI model
+# AI model
 from ai_models.bert_emotion import predict_emotion
 
 import models
 
 # =====================================================
-# DB INIT
+# DATABASE INIT
 # =====================================================
 models.Base.metadata.create_all(bind=engine)
 
@@ -58,7 +58,7 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="7.3.3",
+    version="8.0.0",
 )
 
 # =====================================================
@@ -75,35 +75,34 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     )
 
 # =====================================================
-# ✅ PRODUCTION-SAFE CORS
+# ✅ CORS (FLUTTER WEB + PROD SAFE)
 # =====================================================
-ALLOWED_ORIGINS = [
-    "http://localhost",
-    "http://localhost:52733",
-    "http://127.0.0.1",
-    "https://mental-health-app-1-rv33.onrender.com",
-]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"http://localhost:\d+",
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
-    expose_headers=["Authorization"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # =====================================================
-# SECURITY HEADERS (CORS-SAFE)
+# ✅ PRE-FLIGHT HANDLER (CRITICAL)
+# =====================================================
+@app.middleware("http")
+async def handle_preflight(request: Request, call_next):
+    if request.method == "OPTIONS":
+        return Response(status_code=200)
+    return await call_next(request)
+
+# =====================================================
+# SECURITY HEADERS
 # =====================================================
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
-
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-
     return response
 
 # =====================================================
@@ -137,7 +136,6 @@ def get_current_user(
     db: Session = Depends(get_db),
 ):
     email = verify_access_token(token)
-
     if not email:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -155,45 +153,33 @@ def get_current_user(
 # =====================================================
 @app.post("/register", response_model=TokenResponse)
 def register(user: UserCreate, db: Session = Depends(get_db)):
-    try:
-        if db.query(User).filter(User.email == user.email).first():
-            raise HTTPException(status_code=400, detail="Email already registered")
+    if db.query(User).filter(User.email == user.email).first():
+        raise HTTPException(status_code=400, detail="Email already registered")
 
+    try:
         new_user = User(
             email=user.email,
             password=hash_password(user.password),
         )
-
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
-
-        return {
-            "access_token": create_access_token({"sub": new_user.email}),
-            "refresh_token": create_refresh_token({"sub": new_user.email}),
-            "token_type": "bearer",
-        }
-
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    except Exception:
-        db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail="Registration failed due to server error",
-        )
+    return {
+        "access_token": create_access_token({"sub": new_user.email}),
+        "refresh_token": create_refresh_token({"sub": new_user.email}),
+        "token_type": "bearer",
+    }
 
 @app.post("/login", response_model=TokenResponse)
-@limiter.limit("5/minute")
 def login(
-    request: Request,
     form: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
     user = db.query(User).filter(User.email == form.username).first()
-
     if not user or not verify_password(form.password, user.password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -212,7 +198,6 @@ def login(
 @app.post("/refresh")
 def refresh(payload: RefreshTokenRequest):
     email = verify_refresh_token(payload.refresh_token)
-
     if not email:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
@@ -222,12 +207,11 @@ def refresh(payload: RefreshTokenRequest):
     }
 
 # =====================================================
-# 🧠 EMOTION PREDICTION
+# EMOTION PREDICTION
 # =====================================================
 @app.post("/predict")
 @limiter.limit("10/minute")
 def predict(
-    request: Request,
     data: EmotionCreate,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -305,26 +289,17 @@ def profile(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    total_entries = (
-        db.query(func.count(EmotionHistory.id))
-        .filter(EmotionHistory.user_id == user.id)
-        .scalar()
-        or 0
-    )
+    total_entries = db.query(func.count(EmotionHistory.id)).filter(
+        EmotionHistory.user_id == user.id
+    ).scalar() or 0
 
-    avg_severity = (
-        db.query(func.avg(EmotionHistory.severity))
-        .filter(EmotionHistory.user_id == user.id)
-        .scalar()
-        or 0.0
-    )
+    avg_severity = db.query(func.avg(EmotionHistory.severity)).filter(
+        EmotionHistory.user_id == user.id
+    ).scalar() or 0.0
 
     high_risk = (
         db.query(EmotionHistory)
-        .filter(
-            EmotionHistory.user_id == user.id,
-            EmotionHistory.severity >= 4,
-        )
+        .filter(EmotionHistory.user_id == user.id, EmotionHistory.severity >= 4)
         .first()
         is not None
     )
