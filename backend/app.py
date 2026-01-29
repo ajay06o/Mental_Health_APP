@@ -13,13 +13,7 @@ if PROJECT_ROOT not in sys.path:
 # =====================================================
 # IMPORTS
 # =====================================================
-from fastapi import (
-    FastAPI,
-    Depends,
-    HTTPException,
-    status,
-    Request,          # ✅ REQUIRED FOR SLOWAPI
-)
+from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -60,7 +54,7 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="7.1.1",
+    version="7.2.1",
 )
 
 # =====================================================
@@ -70,15 +64,11 @@ limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 
 # =====================================================
-# CORS (PRODUCTION READY)
+# CORS (FLUTTER WEB DEV SAFE)
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "https://your-flutter-app-domain.com",
-    ],
+    allow_origins=["*"],   # ⚠️ restrict in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -162,10 +152,6 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
             "token_type": "bearer",
         }
 
-    except ValueError as e:
-        db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
-
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -180,7 +166,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 @app.post("/login", response_model=TokenResponse)
 @limiter.limit("5/minute")
 def login(
-    request: Request,    # ✅ REQUIRED FOR SLOWAPI
+    request: Request,
     form: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
@@ -219,7 +205,7 @@ def refresh(payload: RefreshTokenRequest):
 @app.post("/predict")
 @limiter.limit("10/minute")
 def predict(
-    request: Request,    # ✅ REQUIRED FOR SLOWAPI
+    request: Request,
     data: EmotionCreate,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -229,14 +215,13 @@ def predict(
     emotion = result["final_mental_state"]
     confidence = float(result["confidence"])
 
-    severity_map = {
+    severity = {
         "happy": 1,
         "sad": 2,
         "anxiety": 3,
         "depression": 4,
         "suicidal": 5,
-    }
-    severity = severity_map.get(emotion, 1)
+    }.get(emotion, 1)
 
     record = EmotionHistory(
         user_id=user.id,
@@ -258,10 +243,10 @@ def predict(
     }
 
 # =====================================================
-# HISTORY API
+# HISTORY
 # =====================================================
 @app.get("/history")
-def get_history(
+def history(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -283,34 +268,25 @@ def get_history(
     ]
 
 # =====================================================
-# PROFILE APIs
+# PROFILE
 # =====================================================
 @app.get("/profile")
-def get_profile(
+def profile(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    total_entries = (
-        db.query(func.count(EmotionHistory.id))
-        .filter(EmotionHistory.user_id == user.id)
-        .scalar()
-    ) or 0
+    total_entries = db.query(func.count(EmotionHistory.id)).filter(
+        EmotionHistory.user_id == user.id
+    ).scalar() or 0
 
-    avg_severity = (
-        db.query(func.avg(EmotionHistory.severity))
-        .filter(EmotionHistory.user_id == user.id)
-        .scalar()
-    ) or 0.0
+    avg_severity = db.query(func.avg(EmotionHistory.severity)).filter(
+        EmotionHistory.user_id == user.id
+    ).scalar() or 0.0
 
-    high_risk = (
-        db.query(EmotionHistory)
-        .filter(
-            EmotionHistory.user_id == user.id,
-            EmotionHistory.severity >= 4,
-        )
-        .first()
-        is not None
-    )
+    high_risk = db.query(EmotionHistory).filter(
+        EmotionHistory.user_id == user.id,
+        EmotionHistory.severity >= 4,
+    ).first() is not None
 
     return {
         "user_id": user.id,
@@ -330,11 +306,10 @@ def update_profile(
     db: Session = Depends(get_db),
 ):
     if payload.email:
-        exists = (
-            db.query(User)
-            .filter(User.email == payload.email, User.id != user.id)
-            .first()
-        )
+        exists = db.query(User).filter(
+            User.email == payload.email,
+            User.id != user.id,
+        ).first()
         if exists:
             raise HTTPException(status_code=400, detail="Email already in use")
         user.email = payload.email
