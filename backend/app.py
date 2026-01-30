@@ -13,7 +13,7 @@ if PROJECT_ROOT not in sys.path:
 # =====================================================
 # IMPORTS
 # =====================================================
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
@@ -51,15 +51,19 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="1.0.1",
+    version="1.0.2",
 )
 
 # =====================================================
-# CORS (FLUTTER SAFE)
+# ✅ CORS (FIXED – WEB SAFE)
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:61805",  # Flutter Web
+        "http://localhost:3000",
+        "https://mental-health-app-1-rv33.onrender.com",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -71,7 +75,6 @@ app.add_middleware(
 @app.get("/")
 def root():
     return {"status": "OK", "message": "Backend running 🚀"}
-
 
 @app.get("/health")
 def health():
@@ -88,17 +91,26 @@ def get_db():
         db.close()
 
 # =====================================================
-# AUTH DEPENDENCY
+# AUTH DEPENDENCY (CORS SAFE)
 # =====================================================
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
-
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login", auto_error=False)
 
 def get_current_user(
+    request: Request,
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    email = verify_access_token(token)
+    # ✅ Allow OPTIONS requests (CORS preflight)
+    if request.method == "OPTIONS":
+        return None
 
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+
+    email = verify_access_token(token)
     if not email:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -115,7 +127,7 @@ def get_current_user(
     return user
 
 # =====================================================
-# REGISTER (PUBLIC — NO TOKEN RETURN)
+# REGISTER (PUBLIC)
 # =====================================================
 @app.post("/register", status_code=201)
 def register(user: UserCreate, db: Session = Depends(get_db)):
@@ -176,7 +188,7 @@ def refresh(payload: RefreshTokenRequest):
     }
 
 # =====================================================
-# 🧠 PREDICT (PROTECTED)
+# 🧠 PREDICT (PROTECTED – CORS SAFE)
 # =====================================================
 @app.post("/predict")
 def predict(
