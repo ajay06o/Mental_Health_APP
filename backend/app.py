@@ -51,20 +51,16 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="1.0.2",
+    version="1.0.3",
 )
 
 # =====================================================
-# ✅ CORS (FIXED – WEB SAFE)
+# ✅ CORS (FINAL – WORKS FOR FLUTTER WEB)
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:61805",  # Flutter Web
-        "http://localhost:3000",
-        "https://mental-health-app-1-rv33.onrender.com",
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],          # 🔥 KEY FIX
+    allow_credentials=False,      # 🔥 REQUIRED with "*"
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -93,14 +89,17 @@ def get_db():
 # =====================================================
 # AUTH DEPENDENCY (CORS SAFE)
 # =====================================================
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login", auto_error=False)
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="/login",
+    auto_error=False,
+)
 
 def get_current_user(
     request: Request,
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    # ✅ Allow OPTIONS requests (CORS preflight)
+    # ✅ Allow preflight
     if request.method == "OPTIONS":
         return None
 
@@ -132,17 +131,14 @@ def get_current_user(
 @app.post("/register", status_code=201)
 def register(user: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == user.email).first():
-        raise HTTPException(
-            status_code=400,
-            detail="Email already registered",
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    db.add(
+        User(
+            email=user.email,
+            password=hash_password(user.password),
         )
-
-    new_user = User(
-        email=user.email,
-        password=hash_password(user.password),
     )
-
-    db.add(new_user)
     db.commit()
 
     return {"message": "User registered successfully"}
@@ -175,12 +171,8 @@ def login(
 @app.post("/refresh", response_model=TokenResponse)
 def refresh(payload: RefreshTokenRequest):
     email = verify_refresh_token(payload.refresh_token)
-
     if not email:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token",
-        )
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
 
     return {
         "access_token": create_access_token({"sub": email}),
@@ -188,7 +180,7 @@ def refresh(payload: RefreshTokenRequest):
     }
 
 # =====================================================
-# 🧠 PREDICT (PROTECTED – CORS SAFE)
+# 🧠 PREDICT (PROTECTED)
 # =====================================================
 @app.post("/predict")
 def predict(
@@ -272,7 +264,6 @@ def update_profile(
 ):
     if payload.email:
         user.email = payload.email
-
     if payload.password:
         user.password = hash_password(payload.password)
 
