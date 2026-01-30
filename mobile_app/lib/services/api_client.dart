@@ -32,7 +32,7 @@ class ApiClient {
   // =================================================
   static Future<Map<String, String>> _headers({
     bool json = true,
-    bool withAuth = false, // 🔥 DEFAULT FALSE (IMPORTANT)
+    bool withAuth = false,
     bool isForm = false,
   }) async {
     final headers = <String, String>{
@@ -122,7 +122,7 @@ class ApiClient {
   }
 
   // =================================================
-  // 🌐 PUBLIC GET (NO AUTH)
+  // 🌐 PUBLIC GET
   // =================================================
   static Future<http.Response> getPublic(String endpoint) async {
     return _client
@@ -146,7 +146,7 @@ class ApiClient {
   }
 
   // =================================================
-  // 🌐 PUBLIC POST (REGISTER)
+  // 🌐 PUBLIC POST
   // =================================================
   static Future<http.Response> postPublic(
     String endpoint,
@@ -178,6 +178,22 @@ class ApiClient {
   }
 
   // =================================================
+  // 🔐 AUTH PUT ✅ (FIX ADDED)
+  // =================================================
+  static Future<http.Response> put(
+    String endpoint,
+    Map<String, dynamic> body,
+  ) {
+    return _safeRequest(() async {
+      return _client.put(
+        Uri.parse("$baseUrl$endpoint"),
+        headers: await _headers(withAuth: true),
+        body: jsonEncode(body),
+      );
+    });
+  }
+
+  // =================================================
   // 🔑 LOGIN (FORM)
   // =================================================
   static Future<http.Response> postForm(
@@ -198,7 +214,7 @@ class ApiClient {
   }
 
   // =================================================
-  // 🧠 PREDICT (LONG TIMEOUT)
+  // 🧠 PREDICT
   // =================================================
   static Future<http.Response> predict(
     Map<String, dynamic> body,
