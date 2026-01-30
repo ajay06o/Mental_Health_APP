@@ -32,7 +32,7 @@ class _RegisterScreenState extends State<RegisterScreen>
     super.initState();
     _successController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600),
+      duration: const Duration(milliseconds: 650),
     );
     _scaleAnimation =
         CurvedAnimation(parent: _successController, curve: Curves.elasticOut);
@@ -48,7 +48,7 @@ class _RegisterScreenState extends State<RegisterScreen>
   }
 
   // =========================
-  // REGISTER + AUTO LOGIN (FIXED)
+  // REGISTER + AUTO LOGIN
   // =========================
   Future<void> _handleRegister() async {
     if (_isLoading) return;
@@ -67,7 +67,8 @@ class _RegisterScreenState extends State<RegisterScreen>
       if (!mounted) return;
 
       if (!success) {
-        throw Exception("Registration failed");
+        _showError("Unable to create account. Please try again.");
+        return;
       }
 
       setState(() => _showSuccess = true);
@@ -77,20 +78,21 @@ class _RegisterScreenState extends State<RegisterScreen>
       if (!mounted) return;
 
       context.go("/home");
-    } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.toString().replaceAll("Exception:", "").trim()),
-          backgroundColor: Colors.red,
-        ),
-      );
+    } catch (_) {
+      _showError("Something went wrong. Please try again.");
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.red.shade600,
+      ),
+    );
   }
 
   @override
@@ -100,14 +102,17 @@ class _RegisterScreenState extends State<RegisterScreen>
         width: double.infinity,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF4F46E5), Color(0xFF6366F1)],
+            colors: [
+              Color(0xFF6366F1),
+              Color(0xFF8B5CF6),
+            ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
         ),
         child: Center(
           child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 400),
+            duration: const Duration(milliseconds: 450),
             child: _showSuccess ? _successView() : _registerForm(),
           ),
         ),
@@ -125,7 +130,7 @@ class _RegisterScreenState extends State<RegisterScreen>
         mainAxisSize: MainAxisSize.min,
         children: const [
           CircleAvatar(
-            radius: 48,
+            radius: 50,
             backgroundColor: Colors.white,
             child: Icon(
               Icons.check_circle,
@@ -133,16 +138,16 @@ class _RegisterScreenState extends State<RegisterScreen>
               size: 64,
             ),
           ),
-          SizedBox(height: 20),
+          SizedBox(height: 22),
           Text(
-            "Account Created!",
+            "Account Created 🎉",
             style: TextStyle(
               color: Colors.white,
-              fontSize: 24,
+              fontSize: 26,
               fontWeight: FontWeight.bold,
             ),
           ),
-          SizedBox(height: 8),
+          SizedBox(height: 6),
           Text(
             "Welcome to your wellness journey 🌱",
             style: TextStyle(color: Colors.white70),
@@ -159,14 +164,14 @@ class _RegisterScreenState extends State<RegisterScreen>
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Card(
+        elevation: 20,
         color: Colors.white.withOpacity(0.96),
-        elevation: 18,
         shadowColor: Colors.black26,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(26),
+          borderRadius: BorderRadius.circular(28),
         ),
         child: Padding(
-          padding: const EdgeInsets.all(28),
+          padding: const EdgeInsets.all(30),
           child: Form(
             key: _formKey,
             child: Column(
@@ -176,15 +181,16 @@ class _RegisterScreenState extends State<RegisterScreen>
                   tag: "auth-hero",
                   child: Icon(
                     Icons.person_add_alt_1,
-                    size: 60,
+                    size: 64,
                     color: Colors.indigo,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
+
                 const Text(
                   "Create Account",
                   style: TextStyle(
-                    fontSize: 26,
+                    fontSize: 28,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -193,27 +199,33 @@ class _RegisterScreenState extends State<RegisterScreen>
                   "Start your mental wellness journey",
                   style: TextStyle(color: Colors.grey.shade600),
                 ),
-                const SizedBox(height: 30),
+
+                const SizedBox(height: 32),
 
                 // EMAIL
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
                   validator: (v) =>
-                      v == null || !v.contains("@") ? "Enter valid email" : null,
+                      v != null && v.contains("@")
+                          ? null
+                          : "Enter a valid email",
                   decoration: _inputDecoration(
                     label: "Email",
                     icon: Icons.email_outlined,
                   ),
                 ),
-                const SizedBox(height: 16),
+
+                const SizedBox(height: 18),
 
                 // PASSWORD
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
                   validator: (v) =>
-                      v != null && v.length >= 6 ? null : "Min 6 characters",
+                      v != null && v.length >= 6
+                          ? null
+                          : "Use at least 6 characters",
                   decoration: _inputDecoration(
                     label: "Password",
                     icon: Icons.lock_outline,
@@ -228,15 +240,29 @@ class _RegisterScreenState extends State<RegisterScreen>
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
+
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    "Minimum 6 characters",
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 18),
 
                 // CONFIRM PASSWORD
                 TextFormField(
                   controller: _confirmPasswordController,
                   obscureText: _obscureConfirm,
-                  validator: (v) => v == _passwordController.text
-                      ? null
-                      : "Passwords do not match",
+                  validator: (v) =>
+                      v == _passwordController.text
+                          ? null
+                          : "Passwords should match",
                   decoration: _inputDecoration(
                     label: "Confirm Password",
                     icon: Icons.lock_outline,
@@ -251,9 +277,10 @@ class _RegisterScreenState extends State<RegisterScreen>
                     ),
                   ),
                 ),
+
                 const SizedBox(height: 30),
 
-                // BUTTON
+                // REGISTER BUTTON
                 SizedBox(
                   width: double.infinity,
                   height: 54,
@@ -268,7 +295,14 @@ class _RegisterScreenState extends State<RegisterScreen>
                       ),
                     ),
                     child: _isLoading
-                        ? const CircularProgressIndicator(color: Colors.white)
+                        ? const SizedBox(
+                            width: 26,
+                            height: 26,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              color: Colors.white,
+                            ),
+                          )
                         : const Text(
                             "Create Account",
                             style: TextStyle(
@@ -278,6 +312,22 @@ class _RegisterScreenState extends State<RegisterScreen>
                           ),
                   ),
                 ),
+
+                const SizedBox(height: 18),
+
+                // TRUST TEXT
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: const [
+                    Icon(Icons.lock, size: 14, color: Colors.grey),
+                    SizedBox(width: 6),
+                    Text(
+                      "Your data is private & secure",
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ],
+                ),
+
                 const SizedBox(height: 18),
 
                 TextButton(

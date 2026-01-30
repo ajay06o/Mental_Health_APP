@@ -42,14 +42,13 @@ class _LoginScreenState extends State<LoginScreen>
     super.dispose();
   }
 
-  // ==============================
-  // LOGIN HANDLER (SAFE UPDATED)
-  // ==============================
+  // =========================
+  // LOGIN HANDLER
+  // =========================
   Future<void> _handleLogin() async {
     if (_isLoading) return;
 
     FocusScope.of(context).unfocus();
-
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
@@ -62,23 +61,22 @@ class _LoginScreenState extends State<LoginScreen>
 
       if (!mounted) return;
 
-      setState(() => _isLoading = false);
-
-      if (success) {
-        setState(() => _showSuccess = true);
-        _successController.forward();
-
-        await Future.delayed(const Duration(milliseconds: 1200));
-        if (!mounted) return;
-
-        context.go("/home");
-      } else {
+      if (!success) {
         _showError("Invalid email or password");
+        return;
       }
-    } catch (e) {
+
+      setState(() => _showSuccess = true);
+      _successController.forward();
+
+      await Future.delayed(const Duration(milliseconds: 1200));
       if (!mounted) return;
-      setState(() => _isLoading = false);
+
+      context.go("/home");
+    } catch (_) {
       _showError("Unable to login. Please try again.");
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -86,7 +84,8 @@ class _LoginScreenState extends State<LoginScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.red.shade600,
       ),
     );
   }
@@ -98,14 +97,17 @@ class _LoginScreenState extends State<LoginScreen>
         width: double.infinity,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF4F46E5), Color(0xFF6366F1)],
+            colors: [
+              Color(0xFF6366F1),
+              Color(0xFF8B5CF6),
+            ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
         ),
         child: Center(
           child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 400),
+            duration: const Duration(milliseconds: 450),
             child: _showSuccess ? _successView() : _loginForm(),
           ),
         ),
@@ -123,7 +125,7 @@ class _LoginScreenState extends State<LoginScreen>
         mainAxisSize: MainAxisSize.min,
         children: const [
           CircleAvatar(
-            radius: 48,
+            radius: 50,
             backgroundColor: Colors.white,
             child: Icon(
               Icons.check_circle,
@@ -131,18 +133,18 @@ class _LoginScreenState extends State<LoginScreen>
               size: 64,
             ),
           ),
-          SizedBox(height: 20),
+          SizedBox(height: 22),
           Text(
-            "Login Successful!",
+            "Welcome Back 👋",
             style: TextStyle(
               color: Colors.white,
-              fontSize: 24,
+              fontSize: 26,
               fontWeight: FontWeight.bold,
             ),
           ),
-          SizedBox(height: 8),
+          SizedBox(height: 6),
           Text(
-            "Welcome back 🌱",
+            "Glad to see you again 🌱",
             style: TextStyle(color: Colors.white70),
           ),
         ],
@@ -157,14 +159,14 @@ class _LoginScreenState extends State<LoginScreen>
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Card(
+        elevation: 20,
         color: Colors.white.withOpacity(0.96),
-        elevation: 18,
         shadowColor: Colors.black26,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(26),
+          borderRadius: BorderRadius.circular(28),
         ),
         child: Padding(
-          padding: const EdgeInsets.all(28),
+          padding: const EdgeInsets.all(30),
           child: Form(
             key: _formKey,
             child: Column(
@@ -173,60 +175,52 @@ class _LoginScreenState extends State<LoginScreen>
                 const Hero(
                   tag: "auth-hero",
                   child: Icon(
-                    Icons.lock_open_rounded,
-                    size: 60,
+                    Icons.self_improvement,
+                    size: 64,
                     color: Colors.indigo,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
 
                 const Text(
                   "Welcome Back",
                   style: TextStyle(
-                    fontSize: 26,
+                    fontSize: 28,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  "Login to continue",
+                  "Continue your wellness journey",
                   style: TextStyle(color: Colors.grey.shade600),
                 ),
 
-                const SizedBox(height: 30),
+                const SizedBox(height: 32),
 
+                // EMAIL
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return "Email is required";
-                    }
-                    if (!value.contains("@")) {
-                      return "Enter a valid email";
-                    }
-                    return null;
-                  },
+                  validator: (v) =>
+                      v != null && v.contains("@")
+                          ? null
+                          : "Enter a valid email",
                   decoration: _inputDecoration(
                     label: "Email",
                     icon: Icons.email_outlined,
                   ),
                 ),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
 
+                // PASSWORD
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return "Password is required";
-                    }
-                    if (value.length < 6) {
-                      return "Minimum 6 characters";
-                    }
-                    return null;
-                  },
+                  validator: (v) =>
+                      v != null && v.length >= 6
+                          ? null
+                          : "Minimum 6 characters",
                   decoration: _inputDecoration(
                     label: "Password",
                     icon: Icons.lock_outline,
@@ -236,24 +230,22 @@ class _LoginScreenState extends State<LoginScreen>
                             ? Icons.visibility_off
                             : Icons.visibility,
                       ),
-                      onPressed: () {
-                        setState(() {
-                          _obscurePassword = !_obscurePassword;
-                        });
-                      },
+                      onPressed: () =>
+                          setState(() => _obscurePassword = !_obscurePassword),
                     ),
                   ),
                 ),
 
                 const SizedBox(height: 30),
 
+                // LOGIN BUTTON
                 SizedBox(
                   width: double.infinity,
                   height: 54,
                   child: ElevatedButton(
                     onPressed: _isLoading ? null : _handleLogin,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.indigo,
+                      backgroundColor: Colors.indigo.shade600,
                       foregroundColor: Colors.white,
                       elevation: 6,
                       shape: RoundedRectangleBorder(
@@ -262,8 +254,8 @@ class _LoginScreenState extends State<LoginScreen>
                     ),
                     child: _isLoading
                         ? const SizedBox(
-                            height: 26,
                             width: 26,
+                            height: 26,
                             child: CircularProgressIndicator(
                               strokeWidth: 2.5,
                               color: Colors.white,
@@ -281,10 +273,25 @@ class _LoginScreenState extends State<LoginScreen>
 
                 const SizedBox(height: 18),
 
+                // TRUST TEXT
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: const [
+                    Icon(Icons.lock, size: 14, color: Colors.grey),
+                    SizedBox(width: 6),
+                    Text(
+                      "Your data is private & secure",
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 18),
+
                 TextButton(
                   onPressed: () => context.go("/register"),
                   child: const Text(
-                    "Don’t have an account? Register",
+                    "Don’t have an account? Create one",
                   ),
                 ),
               ],
@@ -295,6 +302,9 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
+  // =========================
+  // INPUT DECORATION
+  // =========================
   InputDecoration _inputDecoration({
     required String label,
     required IconData icon,
