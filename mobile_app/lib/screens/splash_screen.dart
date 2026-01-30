@@ -44,22 +44,23 @@ class _SplashScreenState extends State<SplashScreen>
   // 🚀 APP STARTUP FLOW (SAFE & PRODUCTION READY)
   // =================================================
   Future<void> _bootstrap() async {
-    // Let animation finish smoothly
+    // Allow animation to complete smoothly
     await Future.delayed(const Duration(milliseconds: 1800));
 
+    // Initialize auth state
     await AuthService.init();
 
     if (!mounted || _navigated) return;
 
     final loggedIn = await AuthService.isLoggedIn();
 
-    // Not logged in → Login
+    // 🔐 Not logged in → Login
     if (!loggedIn) {
       _navigate("/login");
       return;
     }
 
-    // Logged in → check Remember Me
+    // 🔁 Logged in → check Remember Me
     final rememberMeEnabled =
         await AuthService.isRememberMeEnabled();
 
@@ -78,7 +79,7 @@ class _SplashScreenState extends State<SplashScreen>
       }
     }
 
-    // Everything OK → Home
+    // ✅ All checks passed → Home
     _navigate("/home");
   }
 
@@ -120,7 +121,7 @@ class _SplashScreenState extends State<SplashScreen>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: const [
-                  // ✅ CENTRALIZED LOGO
+                  // ✅ CENTRALIZED BRAND LOGO
                   AppLogo(size: 96),
 
                   SizedBox(height: 24),

@@ -59,7 +59,9 @@ class _LoginScreenState extends State<LoginScreen>
 
   Future<void> _initBiometrics() async {
     final canUse = await BiometricService.canAuthenticate();
-    if (mounted) setState(() => _biometricAvailable = canUse);
+    if (mounted) {
+      setState(() => _biometricAvailable = canUse);
+    }
   }
 
   @override
@@ -120,6 +122,8 @@ class _LoginScreenState extends State<LoginScreen>
   // BIOMETRIC LOGIN
   // =================================================
   Future<void> _handleBiometricLogin() async {
+    if (_isLoading) return;
+
     if (!_rememberMe) {
       _showError("Enable Remember Me to use biometric login");
       return;
@@ -141,13 +145,17 @@ class _LoginScreenState extends State<LoginScreen>
   // ERROR HANDLER
   // =================================================
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: Colors.red.shade600,
-      ),
-    );
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.red.shade600,
+        ),
+      );
   }
 
   // =================================================
@@ -278,7 +286,8 @@ class _LoginScreenState extends State<LoginScreen>
                           size: 32,
                           color: Colors.indigo,
                         ),
-                        onPressed: _handleBiometricLogin,
+                        onPressed:
+                            _isLoading ? null : _handleBiometricLogin,
                       ),
                   ],
                 ),
@@ -307,6 +316,7 @@ class _LoginScreenState extends State<LoginScreen>
   Widget _emailField() => TextFormField(
         controller: _emailController,
         keyboardType: TextInputType.emailAddress,
+        textInputAction: TextInputAction.next,
         validator: (v) =>
             v != null && v.contains("@") ? null : "Enter a valid email",
         decoration: _inputDecoration(
@@ -318,6 +328,8 @@ class _LoginScreenState extends State<LoginScreen>
   Widget _passwordField() => TextFormField(
         controller: _passwordController,
         obscureText: _obscurePassword,
+        textInputAction: TextInputAction.done,
+        onFieldSubmitted: (_) => _handleLogin(),
         validator: (v) =>
             v != null && v.length >= 6 ? null : "Minimum 6 characters",
         decoration: _inputDecoration(
