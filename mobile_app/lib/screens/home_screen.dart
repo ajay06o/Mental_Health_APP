@@ -194,15 +194,40 @@ class _HomeScreenState extends State<HomeScreen> {
       utc.add(const Duration(hours: 5, minutes: 30));
 
   // ==============================
-  // GRAPH (UNCHANGED CORE)
+  // EMPTY STATE
+  // ==============================
+  Widget _emptyState() {
+    return Expanded(
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.show_chart, size: 64, color: Colors.grey),
+            SizedBox(height: 12),
+            Text(
+              "No data yet",
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey,
+              ),
+            ),
+            SizedBox(height: 6),
+            Text(
+              "Start analyzing to see trends",
+              style: TextStyle(color: Colors.grey),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ==============================
+  // GRAPH (ENHANCED)
   // ==============================
   Widget _graph() {
-    if (_points.length < 2) {
-      return const Padding(
-        padding: EdgeInsets.all(16),
-        child: Text("Not enough data to show trend"),
-      );
-    }
+    if (_points.length < 2) return _emptyState();
 
     final spots = List.generate(
       _points.length,
@@ -217,20 +242,88 @@ class _HomeScreenState extends State<HomeScreen> {
         LineChartData(
           minY: 0.8,
           maxY: 5.2,
-          gridData: FlGridData(show: true),
-          titlesData: FlTitlesData(show: false),
+
+          gridData: FlGridData(
+            show: true,
+            horizontalInterval: 1,
+            drawVerticalLine: false,
+            getDrawingHorizontalLine: (_) => FlLine(
+              color: Colors.grey.withOpacity(0.15),
+              dashArray: [6, 6],
+            ),
+          ),
+
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                interval: 1,
+                reservedSize: 42,
+                getTitlesWidget: (value, _) {
+                  const map = {
+                    1: "😊",
+                    2: "😔",
+                    3: "😰",
+                    4: "💔",
+                    5: "🚨",
+                  };
+                  return Center(
+                    child: Text(
+                      map[value.round()] ?? "",
+                      style: const TextStyle(fontSize: 18),
+                    ),
+                  );
+                },
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                interval: 1,
+                getTitlesWidget: (value, _) {
+                  final i = value.toInt();
+                  if (i < 0 || i >= _points.length) {
+                    return const SizedBox.shrink();
+                  }
+                  return Text("E${i + 1}");
+                },
+              ),
+            ),
+            topTitles:
+                AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles:
+                AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          ),
+
           lineBarsData: [
             LineChartBarData(
               spots: spots,
               isCurved: true,
               barWidth: 4,
-              color: Colors.deepPurple,
-              dotData: FlDotData(show: true),
+              gradient: const LinearGradient(
+                colors: [
+                  Color(0xFF8B5CF6),
+                  Color(0xFF6366F1),
+                ],
+              ),
+              dotData: FlDotData(
+                show: true,
+                getDotPainter: (_, __, ___, ____) =>
+                    FlDotCirclePainter(
+                  radius: 5,
+                  color: Colors.white,
+                  strokeWidth: 3,
+                  strokeColor: Colors.deepPurple,
+                ),
+              ),
             ),
           ],
+
           lineTouchData: LineTouchData(
             touchTooltipData: LineTouchTooltipData(
-              tooltipBgColor: Colors.black87,
+              tooltipBgColor: Colors.black.withOpacity(0.85),
+              tooltipRoundedRadius: 16,
+              tooltipPadding: const EdgeInsets.all(12),
               getTooltipItems: (touched) {
                 return touched.map((spot) {
                   final p = _points[spot.spotIndex];
@@ -244,6 +337,8 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
+        duration: const Duration(milliseconds: 700),
+        curve: Curves.easeOutCubic,
       ),
     );
   }
@@ -255,12 +350,12 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("MindEase Dashboard"),
+        title: const Text("Dashboard"),
         actions: const [
           Padding(
             padding: EdgeInsets.only(right: 12),
-            child: AppLogo(size: 32, color: Colors.white),
-          )
+            child: AppLogo(size: 28, color: Colors.white),
+          ),
         ],
       ),
       body: Padding(
@@ -288,9 +383,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-
             const SizedBox(height: 12),
-
             SizedBox(
               width: double.infinity,
               height: 48,
@@ -301,7 +394,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     : const Text("Analyze"),
               ),
             ),
-
             if (_currentEmotion != null) ...[
               const SizedBox(height: 12),
               Chip(
@@ -312,7 +404,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ],
-
             const SizedBox(height: 12),
             _graph(),
           ],
