@@ -44,12 +44,12 @@ class AuthService {
       },
     );
 
-    if (response.statusCode != 200) {
+    // ✅ ACCEPT 200 & 201 AS SUCCESS
+    if (response.statusCode != 200 && response.statusCode != 201) {
       print("REGISTER FAILED ${response.statusCode}: ${response.body}");
       return false;
     }
 
-    // 🚫 Register should NOT expect tokens
     return true;
   }
 
@@ -171,7 +171,7 @@ class AuthService {
   }
 
   // =========================
-  // 💾 SAVE TOKENS
+  // 💾 SAVE TOKENS FROM LOGIN
   // =========================
   static Future<bool> _saveTokensFromResponse(
     Map<String, dynamic> data,
