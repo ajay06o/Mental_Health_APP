@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+
 import '../services/auth_service.dart';
+import '../services/biometric_service.dart';
+import '../widgets/app_logo.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -20,18 +23,43 @@ class _LoginScreenState extends State<LoginScreen>
   bool _showSuccess = false;
   bool _obscurePassword = true;
 
-  late AnimationController _successController;
-  late Animation<double> _scaleAnimation;
+  bool _rememberMe = true;
+  bool _biometricAvailable = false;
+
+  late final AnimationController _successController;
+  late final Animation<double> _scaleAnimation;
 
   @override
   void initState() {
     super.initState();
+
     _successController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
     );
+
     _scaleAnimation =
         CurvedAnimation(parent: _successController, curve: Curves.elasticOut);
+
+    _loadSavedCredentials();
+    _initBiometrics();
+  }
+
+  // =================================================
+  // INIT HELPERS
+  // =================================================
+  Future<void> _loadSavedCredentials() async {
+    final data = await AuthService.loadSavedCredentials();
+    if (!mounted || data.isEmpty) return;
+
+    _emailController.text = data["email"] ?? "";
+    _passwordController.text = data["password"] ?? "";
+    setState(() => _rememberMe = true);
+  }
+
+  Future<void> _initBiometrics() async {
+    final canUse = await BiometricService.canAuthenticate();
+    if (mounted) setState(() => _biometricAvailable = canUse);
   }
 
   @override
@@ -42,14 +70,16 @@ class _LoginScreenState extends State<LoginScreen>
     super.dispose();
   }
 
-  // =========================
+  // =================================================
   // LOGIN HANDLER
-  // =========================
-  Future<void> _handleLogin() async {
+  // =================================================
+  Future<void> _handleLogin({bool fromBiometric = false}) async {
     if (_isLoading) return;
 
-    FocusScope.of(context).unfocus();
-    if (!_formKey.currentState!.validate()) return;
+    if (!fromBiometric) {
+      FocusScope.of(context).unfocus();
+      if (!_formKey.currentState!.validate()) return;
+    }
 
     setState(() => _isLoading = true);
 
@@ -66,6 +96,12 @@ class _LoginScreenState extends State<LoginScreen>
         return;
       }
 
+      await AuthService.saveLoginCredentials(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+        rememberMe: _rememberMe,
+      );
+
       setState(() => _showSuccess = true);
       _successController.forward();
 
@@ -74,12 +110,36 @@ class _LoginScreenState extends State<LoginScreen>
 
       context.go("/home");
     } catch (_) {
-      _showError("Unable to login. Please try again.");
+      _showError("Login failed. Please try again.");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
+  // =================================================
+  // BIOMETRIC LOGIN
+  // =================================================
+  Future<void> _handleBiometricLogin() async {
+    if (!_rememberMe) {
+      _showError("Enable Remember Me to use biometric login");
+      return;
+    }
+
+    if (_emailController.text.isEmpty ||
+        _passwordController.text.isEmpty) {
+      _showError("No saved credentials found");
+      return;
+    }
+
+    final authenticated = await BiometricService.authenticate();
+    if (!authenticated) return;
+
+    await _handleLogin(fromBiometric: true);
+  }
+
+  // =================================================
+  // ERROR HANDLER
+  // =================================================
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -90,6 +150,9 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
+  // =================================================
+  // UI
+  // =================================================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -115,9 +178,9 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  // =========================
+  // =================================================
   // SUCCESS VIEW
-  // =========================
+  // =================================================
   Widget _successView() {
     return ScaleTransition(
       scale: _scaleAnimation,
@@ -152,9 +215,9 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  // =========================
+  // =================================================
   // LOGIN FORM
-  // =========================
+  // =================================================
   Widget _loginForm() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -174,11 +237,7 @@ class _LoginScreenState extends State<LoginScreen>
               children: [
                 const Hero(
                   tag: "auth-hero",
-                  child: Icon(
-                    Icons.self_improvement,
-                    size: 64,
-                    color: Colors.indigo,
-                  ),
+                  child: AppLogo(size: 64),
                 ),
                 const SizedBox(height: 18),
 
@@ -197,102 +256,42 @@ class _LoginScreenState extends State<LoginScreen>
 
                 const SizedBox(height: 32),
 
-                // EMAIL
-                TextFormField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  validator: (v) =>
-                      v != null && v.contains("@")
-                          ? null
-                          : "Enter a valid email",
-                  decoration: _inputDecoration(
-                    label: "Email",
-                    icon: Icons.email_outlined,
-                  ),
-                ),
-
+                _emailField(),
                 const SizedBox(height: 18),
+                _passwordField(),
 
-                // PASSWORD
-                TextFormField(
-                  controller: _passwordController,
-                  obscureText: _obscurePassword,
-                  validator: (v) =>
-                      v != null && v.length >= 6
-                          ? null
-                          : "Minimum 6 characters",
-                  decoration: _inputDecoration(
-                    label: "Password",
-                    icon: Icons.lock_outline,
-                    suffix: IconButton(
-                      icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility_off
-                            : Icons.visibility,
-                      ),
-                      onPressed: () =>
-                          setState(() => _obscurePassword = !_obscurePassword),
-                    ),
-                  ),
-                ),
+                const SizedBox(height: 12),
 
-                const SizedBox(height: 30),
-
-                // LOGIN BUTTON
-                SizedBox(
-                  width: double.infinity,
-                  height: 54,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _handleLogin,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.indigo.shade600,
-                      foregroundColor: Colors.white,
-                      elevation: 6,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            width: 26,
-                            height: 26,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text(
-                            "Login",
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                  ),
-                ),
-
-                const SizedBox(height: 18),
-
-                // TRUST TEXT
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: const [
-                    Icon(Icons.lock, size: 14, color: Colors.grey),
-                    SizedBox(width: 6),
-                    Text(
-                      "Your data is private & secure",
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                  children: [
+                    Checkbox(
+                      value: _rememberMe,
+                      onChanged: (v) =>
+                          setState(() => _rememberMe = v ?? true),
                     ),
+                    const Text("Remember me"),
+                    const Spacer(),
+                    if (_biometricAvailable)
+                      IconButton(
+                        icon: const Icon(
+                          Icons.fingerprint,
+                          size: 32,
+                          color: Colors.indigo,
+                        ),
+                        onPressed: _handleBiometricLogin,
+                      ),
                   ],
                 ),
+
+                const SizedBox(height: 20),
+
+                _loginButton(),
 
                 const SizedBox(height: 18),
 
                 TextButton(
                   onPressed: () => context.go("/register"),
-                  child: const Text(
-                    "Don’t have an account? Create one",
-                  ),
+                  child: const Text("Don’t have an account? Create one"),
                 ),
               ],
             ),
@@ -302,9 +301,72 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  // =========================
-  // INPUT DECORATION
-  // =========================
+  // =================================================
+  // FIELDS
+  // =================================================
+  Widget _emailField() => TextFormField(
+        controller: _emailController,
+        keyboardType: TextInputType.emailAddress,
+        validator: (v) =>
+            v != null && v.contains("@") ? null : "Enter a valid email",
+        decoration: _inputDecoration(
+          label: "Email",
+          icon: Icons.email_outlined,
+        ),
+      );
+
+  Widget _passwordField() => TextFormField(
+        controller: _passwordController,
+        obscureText: _obscurePassword,
+        validator: (v) =>
+            v != null && v.length >= 6 ? null : "Minimum 6 characters",
+        decoration: _inputDecoration(
+          label: "Password",
+          icon: Icons.lock_outline,
+          suffix: IconButton(
+            icon: Icon(
+              _obscurePassword
+                  ? Icons.visibility_off
+                  : Icons.visibility,
+            ),
+            onPressed: () =>
+                setState(() => _obscurePassword = !_obscurePassword),
+          ),
+        ),
+      );
+
+  Widget _loginButton() => SizedBox(
+        width: double.infinity,
+        height: 54,
+        child: ElevatedButton(
+          onPressed: _isLoading ? null : _handleLogin,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.indigo.shade600,
+            foregroundColor: Colors.white,
+            elevation: 6,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+          ),
+          child: _isLoading
+              ? const SizedBox(
+                  width: 26,
+                  height: 26,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text(
+                  "Login",
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+        ),
+      );
+
   InputDecoration _inputDecoration({
     required String label,
     required IconData icon,

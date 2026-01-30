@@ -23,12 +23,12 @@ class ApiClient {
   static final http.Client _client = http.Client();
 
   // =================================================
-  // 🔒 REFRESH LOCK
+  // 🔒 REFRESH LOCK (PREVENT PARALLEL REFRESH)
   // =================================================
   static Future<String?>? _refreshFuture;
 
   // =================================================
-  // 🧾 HEADERS (SAFE & FLEXIBLE)
+  // 🧾 HEADERS
   // =================================================
   static Future<Map<String, String>> _headers({
     bool json = true,
@@ -53,7 +53,7 @@ class ApiClient {
   }
 
   // =================================================
-  // 🛡️ SAFE REQUEST HANDLER (AUTO REFRESH)
+  // 🛡️ SAFE REQUEST HANDLER
   // =================================================
   static Future<http.Response> _safeRequest(
     Future<http.Response> Function() request, {
@@ -63,24 +63,26 @@ class ApiClient {
       final response =
           await request().timeout(timeout ?? _defaultTimeout);
 
+      // ✅ Success or non-auth error
       if (response.statusCode != 401) {
         return response;
       }
 
-      // 🔁 TRY REFRESH ONCE
+      // 🔁 Attempt token refresh ONCE
       final token = await _refreshTokenQueued();
       if (token == null) {
         await AuthService.logout();
-        throw Exception("Session expired. Please login again.");
+        throw Exception("SESSION_EXPIRED");
       }
 
+      // 🔁 Retry original request
       return await request().timeout(timeout ?? _defaultTimeout);
     } on TimeoutException {
-      throw Exception("Request timed out");
+      throw Exception("REQUEST_TIMEOUT");
     } on SocketException {
-      throw Exception("No internet connection");
+      throw Exception("NO_INTERNET");
     } on FormatException {
-      throw Exception("Invalid server response");
+      throw Exception("INVALID_RESPONSE");
     }
   }
 
@@ -102,7 +104,7 @@ class ApiClient {
       final response = await _client
           .post(
             Uri.parse("$baseUrl/refresh"),
-            headers: {"Content-Type": "application/json"},
+            headers: const {"Content-Type": "application/json"},
             body: jsonEncode({"refresh_token": refreshToken}),
           )
           .timeout(_defaultTimeout);
@@ -178,7 +180,7 @@ class ApiClient {
   }
 
   // =================================================
-  // 🔐 AUTH PUT ✅ (FIX ADDED)
+  // 🔐 AUTH PUT
   // =================================================
   static Future<http.Response> put(
     String endpoint,
@@ -214,7 +216,7 @@ class ApiClient {
   }
 
   // =================================================
-  // 🧠 PREDICT
+  // 🧠 PREDICT (LONG RUNNING)
   // =================================================
   static Future<http.Response> predict(
     Map<String, dynamic> body,

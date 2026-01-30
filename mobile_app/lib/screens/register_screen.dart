@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+
 import '../services/auth_service.dart';
+import '../widgets/app_logo.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -24,8 +26,11 @@ class _RegisterScreenState extends State<RegisterScreen>
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
 
-  late AnimationController _successController;
-  late Animation<double> _scaleAnimation;
+  // ✅ REMEMBER ME
+  bool _rememberMe = true;
+
+  late final AnimationController _successController;
+  late final Animation<double> _scaleAnimation;
 
   @override
   void initState() {
@@ -47,9 +52,9 @@ class _RegisterScreenState extends State<RegisterScreen>
     super.dispose();
   }
 
-  // =========================
-  // REGISTER + AUTO LOGIN
-  // =========================
+  // =================================================
+  // 🆕 REGISTER + AUTO LOGIN
+  // =================================================
   Future<void> _handleRegister() async {
     if (_isLoading) return;
 
@@ -70,6 +75,13 @@ class _RegisterScreenState extends State<RegisterScreen>
         _showError("Unable to create account. Please try again.");
         return;
       }
+
+      // 🔐 Save credentials securely (if allowed)
+      await AuthService.saveLoginCredentials(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+        rememberMe: _rememberMe,
+      );
 
       setState(() => _showSuccess = true);
       _successController.forward();
@@ -95,6 +107,9 @@ class _RegisterScreenState extends State<RegisterScreen>
     );
   }
 
+  // =================================================
+  // UI
+  // =================================================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -120,9 +135,9 @@ class _RegisterScreenState extends State<RegisterScreen>
     );
   }
 
-  // =========================
-  // SUCCESS VIEW
-  // =========================
+  // =================================================
+  // 🎉 SUCCESS VIEW
+  // =================================================
   Widget _successView() {
     return ScaleTransition(
       scale: _scaleAnimation,
@@ -157,9 +172,9 @@ class _RegisterScreenState extends State<RegisterScreen>
     );
   }
 
-  // =========================
-  // REGISTER FORM
-  // =========================
+  // =================================================
+  // 📝 REGISTER FORM
+  // =================================================
   Widget _registerForm() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -179,11 +194,7 @@ class _RegisterScreenState extends State<RegisterScreen>
               children: [
                 const Hero(
                   tag: "auth-hero",
-                  child: Icon(
-                    Icons.person_add_alt_1,
-                    size: 64,
-                    color: Colors.indigo,
-                  ),
+                  child: AppLogo(size: 64),
                 ),
                 const SizedBox(height: 18),
 
@@ -202,131 +213,29 @@ class _RegisterScreenState extends State<RegisterScreen>
 
                 const SizedBox(height: 32),
 
-                // EMAIL
-                TextFormField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  validator: (v) =>
-                      v != null && v.contains("@")
-                          ? null
-                          : "Enter a valid email",
-                  decoration: _inputDecoration(
-                    label: "Email",
-                    icon: Icons.email_outlined,
-                  ),
-                ),
-
+                _emailField(),
                 const SizedBox(height: 18),
-
-                // PASSWORD
-                TextFormField(
-                  controller: _passwordController,
-                  obscureText: _obscurePassword,
-                  validator: (v) =>
-                      v != null && v.length >= 6
-                          ? null
-                          : "Use at least 6 characters",
-                  decoration: _inputDecoration(
-                    label: "Password",
-                    icon: Icons.lock_outline,
-                    suffix: IconButton(
-                      icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility_off
-                            : Icons.visibility,
-                      ),
-                      onPressed: () =>
-                          setState(() => _obscurePassword = !_obscurePassword),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 12),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    "Minimum 6 characters",
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                ),
-
+                _passwordField(),
                 const SizedBox(height: 18),
+                _confirmPasswordField(),
 
-                // CONFIRM PASSWORD
-                TextFormField(
-                  controller: _confirmPasswordController,
-                  obscureText: _obscureConfirm,
-                  validator: (v) =>
-                      v == _passwordController.text
-                          ? null
-                          : "Passwords should match",
-                  decoration: _inputDecoration(
-                    label: "Confirm Password",
-                    icon: Icons.lock_outline,
-                    suffix: IconButton(
-                      icon: Icon(
-                        _obscureConfirm
-                            ? Icons.visibility_off
-                            : Icons.visibility,
-                      ),
-                      onPressed: () =>
-                          setState(() => _obscureConfirm = !_obscureConfirm),
-                    ),
-                  ),
-                ),
+                const SizedBox(height: 16),
 
-                const SizedBox(height: 30),
-
-                // REGISTER BUTTON
-                SizedBox(
-                  width: double.infinity,
-                  height: 54,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _handleRegister,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.indigo.shade600,
-                      foregroundColor: Colors.white,
-                      elevation: 6,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            width: 26,
-                            height: 26,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text(
-                            "Create Account",
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                  ),
-                ),
-
-                const SizedBox(height: 18),
-
-                // TRUST TEXT
+                // 🔐 REMEMBER ME
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: const [
-                    Icon(Icons.lock, size: 14, color: Colors.grey),
-                    SizedBox(width: 6),
-                    Text(
-                      "Your data is private & secure",
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                  children: [
+                    Checkbox(
+                      value: _rememberMe,
+                      onChanged: (v) =>
+                          setState(() => _rememberMe = v ?? true),
                     ),
+                    const Text("Remember me"),
                   ],
                 ),
+
+                const SizedBox(height: 24),
+
+                _registerButton(),
 
                 const SizedBox(height: 18),
 
@@ -342,9 +251,94 @@ class _RegisterScreenState extends State<RegisterScreen>
     );
   }
 
-  // =========================
-  // INPUT DECORATION
-  // =========================
+  // =================================================
+  // FIELDS
+  // =================================================
+  Widget _emailField() => TextFormField(
+        controller: _emailController,
+        keyboardType: TextInputType.emailAddress,
+        validator: (v) =>
+            v != null && v.contains("@") ? null : "Enter a valid email",
+        decoration: _inputDecoration(
+          label: "Email",
+          icon: Icons.email_outlined,
+        ),
+      );
+
+  Widget _passwordField() => TextFormField(
+        controller: _passwordController,
+        obscureText: _obscurePassword,
+        validator: (v) =>
+            v != null && v.length >= 6 ? null : "Use at least 6 characters",
+        decoration: _inputDecoration(
+          label: "Password",
+          icon: Icons.lock_outline,
+          suffix: IconButton(
+            icon: Icon(
+              _obscurePassword
+                  ? Icons.visibility_off
+                  : Icons.visibility,
+            ),
+            onPressed: () =>
+                setState(() => _obscurePassword = !_obscurePassword),
+          ),
+        ),
+      );
+
+  Widget _confirmPasswordField() => TextFormField(
+        controller: _confirmPasswordController,
+        obscureText: _obscureConfirm,
+        validator: (v) =>
+            v == _passwordController.text
+                ? null
+                : "Passwords should match",
+        decoration: _inputDecoration(
+          label: "Confirm Password",
+          icon: Icons.lock_outline,
+          suffix: IconButton(
+            icon: Icon(
+              _obscureConfirm
+                  ? Icons.visibility_off
+                  : Icons.visibility,
+            ),
+            onPressed: () =>
+                setState(() => _obscureConfirm = !_obscureConfirm),
+          ),
+        ),
+      );
+
+  Widget _registerButton() => SizedBox(
+        width: double.infinity,
+        height: 54,
+        child: ElevatedButton(
+          onPressed: _isLoading ? null : _handleRegister,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.indigo.shade600,
+            foregroundColor: Colors.white,
+            elevation: 6,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+          ),
+          child: _isLoading
+              ? const SizedBox(
+                  width: 26,
+                  height: 26,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text(
+                  "Create Account",
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+        ),
+      );
+
   InputDecoration _inputDecoration({
     required String label,
     required IconData icon,
@@ -367,4 +361,3 @@ class _RegisterScreenState extends State<RegisterScreen>
     );
   }
 }
-

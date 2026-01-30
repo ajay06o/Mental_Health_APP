@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+
 import '../services/auth_service.dart';
+import '../services/biometric_service.dart';
+import '../widgets/app_logo.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -11,9 +14,11 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _fadeAnimation;
-  late Animation<double> _scaleAnimation;
+  late final AnimationController _controller;
+  late final Animation<double> _fadeAnimation;
+  late final Animation<double> _scaleAnimation;
+
+  bool _navigated = false;
 
   @override
   void initState() {
@@ -32,17 +37,55 @@ class _SplashScreenState extends State<SplashScreen>
     );
 
     _controller.forward();
-    _handleNavigation();
+    _bootstrap();
   }
 
-  Future<void> _handleNavigation() async {
-    // Let animation breathe
-    await Future.delayed(const Duration(seconds: 2));
+  // =================================================
+  // 🚀 APP STARTUP FLOW (SAFE & PRODUCTION READY)
+  // =================================================
+  Future<void> _bootstrap() async {
+    // Let animation finish smoothly
+    await Future.delayed(const Duration(milliseconds: 1800));
+
+    await AuthService.init();
+
+    if (!mounted || _navigated) return;
 
     final loggedIn = await AuthService.isLoggedIn();
-    if (!mounted) return;
 
-    context.go(loggedIn ? "/home" : "/login");
+    // Not logged in → Login
+    if (!loggedIn) {
+      _navigate("/login");
+      return;
+    }
+
+    // Logged in → check Remember Me
+    final rememberMeEnabled =
+        await AuthService.isRememberMeEnabled();
+
+    if (rememberMeEnabled) {
+      final canBiometric =
+          await BiometricService.canAuthenticate();
+
+      if (canBiometric) {
+        final authenticated =
+            await BiometricService.authenticate();
+
+        if (!authenticated) {
+          _navigate("/login");
+          return;
+        }
+      }
+    }
+
+    // Everything OK → Home
+    _navigate("/home");
+  }
+
+  void _navigate(String route) {
+    if (_navigated || !mounted) return;
+    _navigated = true;
+    context.go(route);
   }
 
   @override
@@ -51,6 +94,9 @@ class _SplashScreenState extends State<SplashScreen>
     super.dispose();
   }
 
+  // =================================================
+  // 🎨 UI
+  // =================================================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -74,15 +120,11 @@ class _SplashScreenState extends State<SplashScreen>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: const [
-                  // App Icon
-                  Icon(
-                    Icons.self_improvement,
-                    size: 96,
-                    color: Colors.white,
-                  ),
+                  // ✅ CENTRALIZED LOGO
+                  AppLogo(size: 96),
+
                   SizedBox(height: 24),
 
-                  // App Name
                   Text(
                     "MindEase",
                     style: TextStyle(
@@ -92,9 +134,9 @@ class _SplashScreenState extends State<SplashScreen>
                       letterSpacing: 1.2,
                     ),
                   ),
+
                   SizedBox(height: 10),
 
-                  // Tagline
                   Text(
                     "Your mental wellness companion 🌱",
                     style: TextStyle(
@@ -111,3 +153,4 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 }
+

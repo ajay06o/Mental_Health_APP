@@ -1,20 +1,31 @@
 import 'dart:convert';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'api_client.dart';
 
 class AuthService {
   // =========================
-  // STORAGE KEYS
+  // TOKEN STORAGE (SharedPreferences)
   // =========================
   static const String _accessTokenKey = "access_token";
   static const String _refreshTokenKey = "refresh_token";
+
+  // =========================
+  // 🔐 SECURE STORAGE (CREDENTIALS)
+  // =========================
+  static const FlutterSecureStorage _secureStorage =
+      FlutterSecureStorage();
+
+  static const String _savedEmailKey = "saved_email";
+  static const String _savedPasswordKey = "saved_password";
+  static const String _rememberMeKey = "remember_me";
 
   static bool cachedLoginState = false;
   static bool _initialized = false;
 
   // =========================
-  // 🔁 INIT
+  // 🔁 INIT (SAFE, IDPOTENT)
   // =========================
   static Future<void> init() async {
     if (_initialized) return;
@@ -44,7 +55,6 @@ class AuthService {
       },
     );
 
-    // ✅ ACCEPT 200 & 201 AS SUCCESS
     if (response.statusCode != 200 && response.statusCode != 201) {
       print("REGISTER FAILED ${response.statusCode}: ${response.body}");
       return false;
@@ -71,7 +81,7 @@ class AuthService {
     }
 
     final data = jsonDecode(response.body);
-    return await _saveTokensFromResponse(data);
+    return _saveTokensFromResponse(data);
   }
 
   // =========================
@@ -84,7 +94,7 @@ class AuthService {
     final registered = await register(email, password);
     if (!registered) return false;
 
-    return await login(email, password);
+    return login(email, password);
   }
 
   // =========================
@@ -110,7 +120,7 @@ class AuthService {
       return accessToken;
     }
 
-    return await _refreshAccessToken();
+    return _refreshAccessToken();
   }
 
   // =========================
@@ -133,7 +143,7 @@ class AuthService {
   }
 
   // =========================
-  // 🔁 REFRESH ACCESS TOKEN (PUBLIC)
+  // 🔁 REFRESH ACCESS TOKEN
   // =========================
   static Future<String?> _refreshAccessToken() async {
     final refreshToken = await getRefreshToken();
@@ -194,12 +204,70 @@ class AuthService {
     return true;
   }
 
+  // =================================================
+  // 🔐 SAVE LOGIN CREDENTIALS (SECURE)
+  // =================================================
+  static Future<void> saveLoginCredentials({
+    required String email,
+    required String password,
+    required bool rememberMe,
+  }) async {
+    await _secureStorage.write(
+      key: _rememberMeKey,
+      value: rememberMe.toString(),
+    );
+
+    await _secureStorage.write(
+      key: _savedEmailKey,
+      value: email,
+    );
+
+    if (rememberMe) {
+      await _secureStorage.write(
+        key: _savedPasswordKey,
+        value: password,
+      );
+    } else {
+      await _secureStorage.delete(key: _savedPasswordKey);
+    }
+  }
+
+  // =================================================
+  // 📥 LOAD SAVED CREDENTIALS
+  // =================================================
+  static Future<Map<String, String>> loadSavedCredentials() async {
+    final rememberMe =
+        await _secureStorage.read(key: _rememberMeKey);
+
+    if (rememberMe != "true") return {};
+
+    return {
+      "email":
+          await _secureStorage.read(key: _savedEmailKey) ?? "",
+      "password":
+          await _secureStorage.read(key: _savedPasswordKey) ?? "",
+    };
+  }
+
+  // =================================================
+  // 🔎 REMEMBER ME STATUS (UI HELPER)
+  // =================================================
+  static Future<bool> isRememberMeEnabled() async {
+    final rememberMe =
+        await _secureStorage.read(key: _rememberMeKey);
+    return rememberMe == "true";
+  }
+
   // =========================
   // 🚪 LOGOUT
   // =========================
   static Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
     await _clearTokens(prefs);
+
+    // 🔐 Remove password only (keep email)
+    await _secureStorage.delete(key: _savedPasswordKey);
+
     cachedLoginState = false;
   }
 
