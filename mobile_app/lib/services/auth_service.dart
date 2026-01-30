@@ -33,10 +33,10 @@ class AuthService {
   }
 
   // =========================
-  // 🆕 REGISTER
+  // 🆕 REGISTER (PUBLIC)
   // =========================
   static Future<bool> register(String email, String password) async {
-    final response = await ApiClient.post(
+    final response = await ApiClient.postPublic(
       "/register",
       {
         "email": email.trim(),
@@ -49,8 +49,8 @@ class AuthService {
       return false;
     }
 
-    final data = jsonDecode(response.body);
-    return await _saveTokensFromResponse(data);
+    // 🚫 Register should NOT expect tokens
+    return true;
   }
 
   // =========================
@@ -75,7 +75,7 @@ class AuthService {
   }
 
   // =========================
-  // 🚀 REGISTER + AUTO LOGIN (ADDED)
+  // 🚀 REGISTER + AUTO LOGIN
   // =========================
   static Future<bool> registerAndAutoLogin(
     String email,
@@ -110,12 +110,11 @@ class AuthService {
       return accessToken;
     }
 
-    // 🔁 Try refresh
     return await _refreshAccessToken();
   }
 
   // =========================
-  // 🔁 GET REFRESH TOKEN (ADDED)
+  // 🔁 GET REFRESH TOKEN
   // =========================
   static Future<String?> getRefreshToken() async {
     final prefs = await SharedPreferences.getInstance();
@@ -123,7 +122,7 @@ class AuthService {
   }
 
   // =========================
-  // 💾 SAVE ACCESS TOKEN (ADDED)
+  // 💾 SAVE ACCESS TOKEN
   // =========================
   static Future<void> saveAccessToken(String accessToken) async {
     if (JwtDecoder.isExpired(accessToken)) return;
@@ -134,18 +133,17 @@ class AuthService {
   }
 
   // =========================
-  // 🔁 REFRESH ACCESS TOKEN
+  // 🔁 REFRESH ACCESS TOKEN (PUBLIC)
   // =========================
   static Future<String?> _refreshAccessToken() async {
     final refreshToken = await getRefreshToken();
-
     if (refreshToken == null) {
       await logout();
       return null;
     }
 
     try {
-      final response = await ApiClient.post(
+      final response = await ApiClient.postPublic(
         "/refresh",
         {"refresh_token": refreshToken},
       );

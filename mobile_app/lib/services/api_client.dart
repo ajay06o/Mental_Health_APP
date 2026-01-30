@@ -23,16 +23,16 @@ class ApiClient {
   static final http.Client _client = http.Client();
 
   // =================================================
-  // 🔒 REFRESH LOCK (QUEUE REQUESTS)
+  // 🔒 REFRESH LOCK
   // =================================================
   static Future<String?>? _refreshFuture;
 
   // =================================================
-  // HEADERS (SAFE)
+  // 🧾 HEADERS (SAFE & FLEXIBLE)
   // =================================================
   static Future<Map<String, String>> _headers({
     bool json = true,
-    bool withAuth = true,
+    bool withAuth = false, // 🔥 DEFAULT FALSE (IMPORTANT)
     bool isForm = false,
   }) async {
     final headers = <String, String>{
@@ -44,17 +44,16 @@ class ApiClient {
 
     if (withAuth) {
       final token = await AuthService.getAccessToken();
-      if (token == null) {
-        throw Exception("User not authenticated");
+      if (token != null) {
+        headers["Authorization"] = "Bearer $token";
       }
-      headers["Authorization"] = "Bearer $token";
     }
 
     return headers;
   }
 
   // =================================================
-  // 🛡️ SAFE REQUEST HANDLER (WEB SAFE)
+  // 🛡️ SAFE REQUEST HANDLER (AUTO REFRESH)
   // =================================================
   static Future<http.Response> _safeRequest(
     Future<http.Response> Function() request, {
@@ -68,7 +67,7 @@ class ApiClient {
         return response;
       }
 
-      // 🔁 HANDLE 401 — REFRESH & RETRY ONCE
+      // 🔁 TRY REFRESH ONCE
       final token = await _refreshTokenQueued();
       if (token == null) {
         await AuthService.logout();
@@ -77,7 +76,7 @@ class ApiClient {
 
       return await request().timeout(timeout ?? _defaultTimeout);
     } on TimeoutException {
-      throw Exception("Request timed out. Please try again.");
+      throw Exception("Request timed out");
     } on SocketException {
       throw Exception("No internet connection");
     } on FormatException {
@@ -123,19 +122,47 @@ class ApiClient {
   }
 
   // =================================================
-  // GET
+  // 🌐 PUBLIC GET (NO AUTH)
+  // =================================================
+  static Future<http.Response> getPublic(String endpoint) async {
+    return _client
+        .get(
+          Uri.parse("$baseUrl$endpoint"),
+          headers: await _headers(),
+        )
+        .timeout(_defaultTimeout);
+  }
+
+  // =================================================
+  // 🔐 AUTH GET
   // =================================================
   static Future<http.Response> get(String endpoint) {
     return _safeRequest(() async {
       return _client.get(
         Uri.parse("$baseUrl$endpoint"),
-        headers: await _headers(),
+        headers: await _headers(withAuth: true),
       );
     });
   }
 
   // =================================================
-  // POST JSON
+  // 🌐 PUBLIC POST (REGISTER)
+  // =================================================
+  static Future<http.Response> postPublic(
+    String endpoint,
+    Map<String, dynamic> body,
+  ) async {
+    return _client
+        .post(
+          Uri.parse("$baseUrl$endpoint"),
+          headers: await _headers(),
+          body: jsonEncode(body),
+        )
+        .timeout(_defaultTimeout);
+  }
+
+  // =================================================
+  // 🔐 AUTH POST
   // =================================================
   static Future<http.Response> post(
     String endpoint,
@@ -144,52 +171,30 @@ class ApiClient {
     return _safeRequest(() async {
       return _client.post(
         Uri.parse("$baseUrl$endpoint"),
-        headers: await _headers(),
+        headers: await _headers(withAuth: true),
         body: jsonEncode(body),
       );
     });
   }
 
   // =================================================
-  // POST FORM (LOGIN)
+  // 🔑 LOGIN (FORM)
   // =================================================
   static Future<http.Response> postForm(
     String endpoint,
     Map<String, String> body,
   ) async {
-    try {
-      return await _client
-          .post(
-            Uri.parse("$baseUrl$endpoint"),
-            headers: await _headers(
-              json: false,
-              withAuth: false,
-              isForm: true,
-            ),
-            body: body,
-          )
-          .timeout(_defaultTimeout);
-    } on TimeoutException {
-      throw Exception("Login timed out");
-    } on SocketException {
-      throw Exception("No internet connection");
-    }
-  }
-
-  // =================================================
-  // PUT JSON
-  // =================================================
-  static Future<http.Response> put(
-    String endpoint,
-    Map<String, dynamic> body,
-  ) {
-    return _safeRequest(() async {
-      return _client.put(
-        Uri.parse("$baseUrl$endpoint"),
-        headers: await _headers(),
-        body: jsonEncode(body),
-      );
-    });
+    return _client
+        .post(
+          Uri.parse("$baseUrl$endpoint"),
+          headers: await _headers(
+            json: false,
+            withAuth: false,
+            isForm: true,
+          ),
+          body: body,
+        )
+        .timeout(_defaultTimeout);
   }
 
   // =================================================
@@ -202,7 +207,7 @@ class ApiClient {
       () async {
         return _client.post(
           Uri.parse("$baseUrl/predict"),
-          headers: await _headers(),
+          headers: await _headers(withAuth: true),
           body: jsonEncode(body),
         );
       },

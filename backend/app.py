@@ -38,9 +38,7 @@ from security import (
     verify_refresh_token,
 )
 
-# ✅ DO NOT RENAME — CORRECT MODEL IMPORT
 from ai_models.mental_health_model import final_prediction
-
 import models
 
 # =====================================================
@@ -53,29 +51,26 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="1.0.0",
+    version="1.0.1",
 )
 
 # =====================================================
-# ✅ SINGLE, SAFE CORS CONFIG (FLUTTER WEB OK)
+# CORS (FLUTTER SAFE)
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Flutter Web uses random localhost ports
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # =====================================================
-# ROOT & HEALTH
+# HEALTH
 # =====================================================
 @app.get("/")
 def root():
-    return {
-        "status": "OK",
-        "message": "Mental Health Backend is running 🚀",
-    }
+    return {"status": "OK", "message": "Backend running 🚀"}
 
 
 @app.get("/health")
@@ -120,9 +115,9 @@ def get_current_user(
     return user
 
 # =====================================================
-# AUTH ROUTES
+# REGISTER (PUBLIC — NO TOKEN RETURN)
 # =====================================================
-@app.post("/register", response_model=TokenResponse)
+@app.post("/register", status_code=201)
 def register(user: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == user.email).first():
         raise HTTPException(
@@ -137,15 +132,12 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 
     db.add(new_user)
     db.commit()
-    db.refresh(new_user)
 
-    return {
-        "access_token": create_access_token({"sub": new_user.email}),
-        "refresh_token": create_refresh_token({"sub": new_user.email}),
-        "token_type": "bearer",
-    }
+    return {"message": "User registered successfully"}
 
-
+# =====================================================
+# LOGIN (PUBLIC)
+# =====================================================
 @app.post("/login", response_model=TokenResponse)
 def login(
     form: OAuth2PasswordRequestForm = Depends(),
@@ -166,9 +158,9 @@ def login(
     }
 
 # =====================================================
-# REFRESH TOKEN
+# REFRESH TOKEN (PUBLIC)
 # =====================================================
-@app.post("/refresh")
+@app.post("/refresh", response_model=TokenResponse)
 def refresh(payload: RefreshTokenRequest):
     email = verify_refresh_token(payload.refresh_token)
 
@@ -184,7 +176,7 @@ def refresh(payload: RefreshTokenRequest):
     }
 
 # =====================================================
-# 🧠 EMOTION PREDICTION (LIGHTWEIGHT + SAFE)
+# 🧠 PREDICT (PROTECTED)
 # =====================================================
 @app.post("/predict")
 def predict(
@@ -213,7 +205,7 @@ def predict(
     }
 
 # =====================================================
-# HISTORY
+# HISTORY (PROTECTED)
 # =====================================================
 @app.get("/history")
 def history(
@@ -238,7 +230,7 @@ def history(
     ]
 
 # =====================================================
-# PROFILE
+# PROFILE (PROTECTED)
 # =====================================================
 @app.get("/profile")
 def profile(
@@ -258,7 +250,7 @@ def profile(
     }
 
 # =====================================================
-# UPDATE PROFILE
+# UPDATE PROFILE (PROTECTED)
 # =====================================================
 @app.put("/profile")
 def update_profile(
@@ -273,5 +265,4 @@ def update_profile(
         user.password = hash_password(payload.password)
 
     db.commit()
-
     return {"message": "Profile updated successfully"}
