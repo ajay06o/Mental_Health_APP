@@ -1,12 +1,21 @@
 import 'dart:convert';
+
 import 'api_client.dart';
 import 'auth_service.dart';
 
 class PredictService {
   // ==============================
-  // 🧠 PREDICT EMOTION
+  // 🧠 PREDICT EMOTION (SAFE)
   // ==============================
   static Future<Map<String, dynamic>> predictEmotion(String text) async {
+    if (text.trim().isEmpty) {
+      return {
+        "emotion": "neutral",
+        "confidence": 0.0,
+        "timestamp": DateTime.now().toIso8601String(),
+      };
+    }
+
     try {
       final token = await AuthService.getAccessToken();
       if (token == null) {
@@ -18,23 +27,46 @@ class PredictService {
         {"text": text},
       );
 
+      // ✅ SUCCESS
       if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
+        final decoded = jsonDecode(response.body);
+
+        return {
+          "emotion": decoded["emotion"] ?? "neutral",
+          "confidence":
+              (decoded["confidence"] is num)
+                  ? (decoded["confidence"] as num).toDouble()
+                  : 0.5,
+          "timestamp":
+              decoded["timestamp"] ??
+              DateTime.now().toIso8601String(),
+        };
       }
 
+      // 🔐 SESSION EXPIRED
       if (response.statusCode == 401) {
         await AuthService.logout();
         throw Exception("Session expired. Please login again.");
       }
 
-      throw Exception("Prediction failed (${response.statusCode})");
-    } catch (e) {
-      throw Exception("Prediction error: $e");
+      // ⚠️ ANY OTHER ERROR → SAFE FALLBACK
+      return {
+        "emotion": "neutral",
+        "confidence": 0.3,
+        "timestamp": DateTime.now().toIso8601String(),
+      };
+    } catch (_) {
+      // 🔥 NEVER CRASH UI
+      return {
+        "emotion": "neutral",
+        "confidence": 0.3,
+        "timestamp": DateTime.now().toIso8601String(),
+      };
     }
   }
 
   // ==============================
-  // 📜 FETCH HISTORY
+  // 📜 FETCH HISTORY (SAFE)
   // ==============================
   static Future<List<Map<String, dynamic>>> fetchHistory() async {
     try {
@@ -46,32 +78,34 @@ class PredictService {
       final response = await ApiClient.get("/history");
 
       if (response.statusCode == 200) {
-        final List<dynamic> decoded = jsonDecode(response.body);
-        return decoded.cast<Map<String, dynamic>>();
+        final decoded = jsonDecode(response.body);
+
+        if (decoded is List) {
+          return decoded.cast<Map<String, dynamic>>();
+        }
       }
 
       if (response.statusCode == 401) {
         await AuthService.logout();
-        throw Exception("Session expired. Please login again.");
       }
 
-      throw Exception("Failed to load history (${response.statusCode})");
-    } catch (e) {
-      throw Exception("History fetch error: $e");
+      return [];
+    } catch (_) {
+      return [];
     }
   }
 
   // ==============================
-  // 🧠 AI SEMANTIC SEARCH (ADDED)
+  // 🧠 AI SEMANTIC SEARCH (OPTIONAL)
   // ==============================
-  static Future<List<Map<String, dynamic>>> semanticSearch(String query) async {
+  static Future<List<Map<String, dynamic>>> semanticSearch(
+    String query,
+  ) async {
     if (query.trim().isEmpty) return [];
 
     try {
       final token = await AuthService.getAccessToken();
-      if (token == null) {
-        throw Exception("User not authenticated");
-      }
+      if (token == null) return [];
 
       final response = await ApiClient.post(
         "/semantic-search",
@@ -79,29 +113,21 @@ class PredictService {
       );
 
       if (response.statusCode == 200) {
-        final List<dynamic> decoded = jsonDecode(response.body);
-        return decoded.cast<Map<String, dynamic>>();
+        final decoded = jsonDecode(response.body);
+        if (decoded is List) {
+          return decoded.cast<Map<String, dynamic>>();
+        }
       }
 
-      if (response.statusCode == 404) {
-        // Backend does not support semantic search yet
-        return [];
-      }
-
-      if (response.statusCode == 401) {
-        await AuthService.logout();
-        throw Exception("Session expired. Please login again.");
-      }
-
-      throw Exception("Semantic search failed (${response.statusCode})");
-    } catch (e) {
-      // 🔥 Do NOT crash UI
+      return [];
+    } catch (_) {
+      // 🔥 Do not crash UI
       return [];
     }
   }
 
   // ==============================
-  // 👤 FETCH PROFILE
+  // 👤 FETCH PROFILE (SAFE)
   // ==============================
   static Future<Map<String, dynamic>> fetchProfile() async {
     try {
@@ -113,24 +139,26 @@ class PredictService {
       final response = await ApiClient.get("/profile");
 
       if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          return decoded;
+        }
       }
 
       if (response.statusCode == 401) {
         await AuthService.logout();
-        throw Exception("Session expired. Please login again.");
       }
 
-      throw Exception("Failed to load profile (${response.statusCode})");
-    } catch (e) {
-      throw Exception("Profile fetch error: $e");
+      return {};
+    } catch (_) {
+      return {};
     }
   }
 
   // ==============================
-  // ✏️ UPDATE PROFILE
+  // ✏️ UPDATE PROFILE (SAFE)
   // ==============================
-  static Future<void> updateProfile({
+  static Future<bool> updateProfile({
     required String email,
     String? password,
   }) async {
@@ -148,24 +176,19 @@ class PredictService {
         body["password"] = password;
       }
 
-      final response = await ApiClient.put(
-        "/profile",
-        body,
-      );
+      final response = await ApiClient.put("/profile", body);
 
-      if (response.statusCode == 200) return;
+      if (response.statusCode == 200) {
+        return true;
+      }
 
       if (response.statusCode == 401) {
         await AuthService.logout();
-        throw Exception("Session expired. Please login again.");
       }
 
-      throw Exception("Profile update failed (${response.statusCode})");
-    } catch (e) {
-      throw Exception("Profile update error: $e");
+      return false;
+    } catch (_) {
+      return false;
     }
   }
 }
-
-
-

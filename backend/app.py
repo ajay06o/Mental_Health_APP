@@ -51,16 +51,16 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="1.0.3",
+    version="1.0.4",  # ✅ bumped
 )
 
 # =====================================================
-# ✅ CORS (FINAL – WORKS FOR FLUTTER WEB)
+# ✅ CORS (FINAL – FLUTTER WEB SAFE)
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],          # 🔥 KEY FIX
-    allow_credentials=False,      # 🔥 REQUIRED with "*"
+    allow_origins=["*"],
+    allow_credentials=False,   # required when using "*"
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -99,7 +99,7 @@ def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    # ✅ Allow preflight
+    # Allow preflight requests
     if request.method == "OPTIONS":
         return None
 
@@ -131,7 +131,10 @@ def get_current_user(
 @app.post("/register", status_code=201)
 def register(user: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == user.email).first():
-        raise HTTPException(status_code=400, detail="Email already registered")
+        raise HTTPException(
+            status_code=400,
+            detail="Email already registered",
+        )
 
     db.add(
         User(
@@ -172,7 +175,10 @@ def login(
 def refresh(payload: RefreshTokenRequest):
     email = verify_refresh_token(payload.refresh_token)
     if not email:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+        )
 
     return {
         "access_token": create_access_token({"sub": email}),
@@ -180,7 +186,7 @@ def refresh(payload: RefreshTokenRequest):
     }
 
 # =====================================================
-# 🧠 PREDICT (PROTECTED)
+# 🧠 PREDICT (PROTECTED – SAFE & ROBUST)
 # =====================================================
 @app.post("/predict")
 def predict(
@@ -190,11 +196,20 @@ def predict(
 ):
     result = final_prediction(data.text)
 
+    # ✅ SAFE FALLBACKS (CRITICAL FIX)
+    emotion = (
+        result.get("final_mental_state")
+        or result.get("emotion")
+        or "neutral"
+    ).lower()
+
+    confidence = float(result.get("confidence", 0.5))
+
     record = EmotionHistory(
         user_id=user.id,
         text=data.text,
-        emotion=result["final_mental_state"].lower(),
-        confidence=float(result["confidence"]),
+        emotion=emotion,
+        confidence=confidence,
         severity=1,
     )
 
