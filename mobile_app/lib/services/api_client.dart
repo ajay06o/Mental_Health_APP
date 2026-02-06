@@ -23,7 +23,7 @@ class ApiClient {
   static final http.Client _client = http.Client();
 
   // =================================================
-  // 🔒 REFRESH LOCK (PREVENT PARALLEL REFRESH)
+  // 🔒 REFRESH LOCK (SINGLE FLIGHT)
   // =================================================
   static Future<String?>? _refreshFuture;
 
@@ -44,7 +44,7 @@ class ApiClient {
 
     if (withAuth) {
       final token = await AuthService.getAccessToken();
-      if (token != null) {
+      if (token != null && token.isNotEmpty) {
         headers["Authorization"] = "Bearer $token";
       }
     }
@@ -53,7 +53,7 @@ class ApiClient {
   }
 
   // =================================================
-  // 🛡️ SAFE REQUEST HANDLER
+  // 🛡️ SAFE REQUEST HANDLER (WITH TOKEN REBUILD)
   // =================================================
   static Future<http.Response> _safeRequest(
     Future<http.Response> Function() request, {
@@ -63,19 +63,18 @@ class ApiClient {
       final response =
           await request().timeout(timeout ?? _defaultTimeout);
 
-      // ✅ Success or non-auth error
       if (response.statusCode != 401) {
         return response;
       }
 
-      // 🔁 Attempt token refresh ONCE
-      final token = await _refreshTokenQueued();
-      if (token == null) {
+      // 🔁 Attempt refresh ONCE
+      final newToken = await _refreshTokenQueued();
+      if (newToken == null) {
         await AuthService.logout();
         throw Exception("SESSION_EXPIRED");
       }
 
-      // 🔁 Retry original request
+      // 🔁 Retry with NEW token (headers rebuilt inside request)
       return await request().timeout(timeout ?? _defaultTimeout);
     } on TimeoutException {
       throw Exception("REQUEST_TIMEOUT");
@@ -98,13 +97,16 @@ class ApiClient {
 
   static Future<String?> _refreshToken() async {
     final refreshToken = await AuthService.getRefreshToken();
-    if (refreshToken == null) return null;
+    if (refreshToken == null || refreshToken.isEmpty) return null;
 
     try {
       final response = await _client
           .post(
             Uri.parse("$baseUrl/refresh"),
-            headers: const {"Content-Type": "application/json"},
+            headers: const {
+              "Content-Type": "application/json",
+              "Accept": "application/json",
+            },
             body: jsonEncode({"refresh_token": refreshToken}),
           )
           .timeout(_defaultTimeout);
@@ -114,7 +116,7 @@ class ApiClient {
       final data = jsonDecode(response.body);
       final newToken = data["access_token"];
 
-      if (newToken == null) return null;
+      if (newToken == null || newToken.isEmpty) return null;
 
       await AuthService.saveAccessToken(newToken);
       return newToken;
@@ -148,7 +150,7 @@ class ApiClient {
   }
 
   // =================================================
-  // 🌐 PUBLIC POST
+  // 🌐 PUBLIC POST (JSON)
   // =================================================
   static Future<http.Response> postPublic(
     String endpoint,
@@ -164,7 +166,7 @@ class ApiClient {
   }
 
   // =================================================
-  // 🔐 AUTH POST
+  // 🔐 AUTH POST (JSON)
   // =================================================
   static Future<http.Response> post(
     String endpoint,
@@ -180,7 +182,7 @@ class ApiClient {
   }
 
   // =================================================
-  // 🔐 AUTH PUT
+  // 🔐 AUTH PUT (JSON)
   // =================================================
   static Future<http.Response> put(
     String endpoint,
@@ -196,7 +198,7 @@ class ApiClient {
   }
 
   // =================================================
-  // 🔑 LOGIN (FORM)
+  // 🔑 LOGIN (FORM – OAuth2)
   // =================================================
   static Future<http.Response> postForm(
     String endpoint,

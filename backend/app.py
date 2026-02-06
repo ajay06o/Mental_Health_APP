@@ -51,16 +51,16 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="1.0.4",  # ✅ bumped
+    version="1.2.0",
 )
 
 # =====================================================
-# ✅ CORS (FINAL – FLUTTER WEB SAFE)
+# CORS (FLUTTER SAFE)
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=False,   # required when using "*"
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -87,7 +87,7 @@ def get_db():
         db.close()
 
 # =====================================================
-# AUTH DEPENDENCY (CORS SAFE)
+# AUTH DEPENDENCY
 # =====================================================
 oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl="/login",
@@ -99,9 +99,9 @@ def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    # Allow preflight requests
+    # ✅ Allow CORS preflight safely
     if request.method == "OPTIONS":
-        return None
+        raise HTTPException(status_code=204)
 
     if not token:
         raise HTTPException(
@@ -115,6 +115,8 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
         )
+
+    email = email.strip().lower()
 
     user = db.query(User).filter(User.email == email).first()
     if not user:
@@ -130,31 +132,35 @@ def get_current_user(
 # =====================================================
 @app.post("/register", status_code=201)
 def register(user: UserCreate, db: Session = Depends(get_db)):
-    if db.query(User).filter(User.email == user.email).first():
+    email = user.email.strip().lower()
+
+    if db.query(User).filter(User.email == email).first():
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered",
         )
 
-    db.add(
-        User(
-            email=user.email,
-            password=hash_password(user.password),
-        )
+    new_user = User(
+        email=email,
+        password=hash_password(user.password),
     )
+
+    db.add(new_user)
     db.commit()
 
     return {"message": "User registered successfully"}
 
 # =====================================================
-# LOGIN (PUBLIC)
+# LOGIN (PUBLIC – OAUTH2)
 # =====================================================
 @app.post("/login", response_model=TokenResponse)
 def login(
     form: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
-    user = db.query(User).filter(User.email == form.username).first()
+    email = form.username.strip().lower()
+
+    user = db.query(User).filter(User.email == email).first()
 
     if not user or not verify_password(form.password, user.password):
         raise HTTPException(
@@ -180,13 +186,16 @@ def refresh(payload: RefreshTokenRequest):
             detail="Invalid refresh token",
         )
 
+    email = email.strip().lower()
+
     return {
         "access_token": create_access_token({"sub": email}),
+        "refresh_token": create_refresh_token({"sub": email}),
         "token_type": "bearer",
     }
 
 # =====================================================
-# 🧠 PREDICT (PROTECTED – SAFE & ROBUST)
+# 🧠 PREDICT (PROTECTED)
 # =====================================================
 @app.post("/predict")
 def predict(
@@ -196,7 +205,6 @@ def predict(
 ):
     result = final_prediction(data.text)
 
-    # ✅ SAFE FALLBACKS (CRITICAL FIX)
     emotion = (
         result.get("final_mental_state")
         or result.get("emotion")
@@ -278,7 +286,8 @@ def update_profile(
     db: Session = Depends(get_db),
 ):
     if payload.email:
-        user.email = payload.email
+        user.email = payload.email.strip().lower()
+
     if payload.password:
         user.password = hash_password(payload.password)
 

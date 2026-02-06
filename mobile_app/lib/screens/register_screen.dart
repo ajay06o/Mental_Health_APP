@@ -26,7 +26,7 @@ class _RegisterScreenState extends State<RegisterScreen>
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
 
-  // ✅ REMEMBER ME
+  // 🔐 REMEMBER ME
   bool _rememberMe = true;
 
   late final AnimationController _successController;
@@ -63,11 +63,12 @@ class _RegisterScreenState extends State<RegisterScreen>
 
     setState(() => _isLoading = true);
 
+    final email = _emailController.text.trim().toLowerCase();
+    final password = _passwordController.text.trim();
+
     try {
-      final success = await AuthService.registerAndAutoLogin(
-        _emailController.text.trim(),
-        _passwordController.text.trim(),
-      );
+      final success =
+          await AuthService.registerAndAutoLogin(email, password);
 
       if (!mounted) return;
 
@@ -76,24 +77,31 @@ class _RegisterScreenState extends State<RegisterScreen>
         return;
       }
 
-      // 🔐 Save credentials securely (if allowed)
+      // 🔐 Save credentials securely (ONLY after success)
       await AuthService.saveLoginCredentials(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
+        email: email,
+        password: password,
         rememberMe: _rememberMe,
       );
 
       setState(() => _showSuccess = true);
-      _successController.forward();
+
+      if (mounted) {
+        _successController.forward();
+      }
 
       await Future.delayed(const Duration(milliseconds: 1200));
       if (!mounted) return;
 
       context.go("/home");
     } catch (_) {
-      _showError("Something went wrong. Please try again.");
+      if (mounted) {
+        _showError("Something went wrong. Please try again.");
+      }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -197,7 +205,6 @@ class _RegisterScreenState extends State<RegisterScreen>
                   child: AppLogo(size: 64),
                 ),
                 const SizedBox(height: 18),
-
                 const Text(
                   "Create Account",
                   style: TextStyle(
@@ -210,18 +217,13 @@ class _RegisterScreenState extends State<RegisterScreen>
                   "Start your mental wellness journey",
                   style: TextStyle(color: Colors.grey.shade600),
                 ),
-
                 const SizedBox(height: 32),
-
                 _emailField(),
                 const SizedBox(height: 18),
                 _passwordField(),
                 const SizedBox(height: 18),
                 _confirmPasswordField(),
-
                 const SizedBox(height: 16),
-
-                // 🔐 REMEMBER ME
                 Row(
                   children: [
                     Checkbox(
@@ -232,13 +234,9 @@ class _RegisterScreenState extends State<RegisterScreen>
                     const Text("Remember me"),
                   ],
                 ),
-
                 const SizedBox(height: 24),
-
                 _registerButton(),
-
                 const SizedBox(height: 18),
-
                 TextButton(
                   onPressed: () => context.go("/login"),
                   child: const Text("Already have an account? Login"),
@@ -269,7 +267,9 @@ class _RegisterScreenState extends State<RegisterScreen>
         controller: _passwordController,
         obscureText: _obscurePassword,
         validator: (v) =>
-            v != null && v.length >= 6 ? null : "Use at least 6 characters",
+            v != null && v.trim().length >= 6
+                ? null
+                : "Use at least 6 characters",
         decoration: _inputDecoration(
           label: "Password",
           icon: Icons.lock_outline,
@@ -289,7 +289,8 @@ class _RegisterScreenState extends State<RegisterScreen>
         controller: _confirmPasswordController,
         obscureText: _obscureConfirm,
         validator: (v) =>
-            v == _passwordController.text
+            v != null &&
+                    v.trim() == _passwordController.text.trim()
                 ? null
                 : "Passwords should match",
         decoration: _inputDecoration(

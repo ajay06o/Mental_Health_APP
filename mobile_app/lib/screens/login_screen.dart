@@ -54,6 +54,7 @@ class _LoginScreenState extends State<LoginScreen>
 
     _emailController.text = data["email"] ?? "";
     _passwordController.text = data["password"] ?? "";
+
     setState(() => _rememberMe = true);
   }
 
@@ -85,11 +86,11 @@ class _LoginScreenState extends State<LoginScreen>
 
     setState(() => _isLoading = true);
 
+    final email = _emailController.text.trim().toLowerCase();
+    final password = _passwordController.text.trim();
+
     try {
-      final success = await AuthService.login(
-        _emailController.text.trim(),
-        _passwordController.text.trim(),
-      );
+      final success = await AuthService.login(email, password);
 
       if (!mounted) return;
 
@@ -99,22 +100,29 @@ class _LoginScreenState extends State<LoginScreen>
       }
 
       await AuthService.saveLoginCredentials(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
+        email: email,
+        password: password,
         rememberMe: _rememberMe,
       );
 
       setState(() => _showSuccess = true);
-      _successController.forward();
+
+      if (mounted) {
+        _successController.forward();
+      }
 
       await Future.delayed(const Duration(milliseconds: 1200));
       if (!mounted) return;
 
       context.go("/home");
     } catch (_) {
-      _showError("Login failed. Please try again.");
+      if (mounted) {
+        _showError("Login failed. Please try again.");
+      }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -248,7 +256,6 @@ class _LoginScreenState extends State<LoginScreen>
                   child: AppLogo(size: 64),
                 ),
                 const SizedBox(height: 18),
-
                 const Text(
                   "Welcome Back",
                   style: TextStyle(
@@ -261,15 +268,11 @@ class _LoginScreenState extends State<LoginScreen>
                   "Continue your wellness journey",
                   style: TextStyle(color: Colors.grey.shade600),
                 ),
-
                 const SizedBox(height: 32),
-
                 _emailField(),
                 const SizedBox(height: 18),
                 _passwordField(),
-
                 const SizedBox(height: 12),
-
                 Row(
                   children: [
                     Checkbox(
@@ -291,13 +294,9 @@ class _LoginScreenState extends State<LoginScreen>
                       ),
                   ],
                 ),
-
                 const SizedBox(height: 20),
-
                 _loginButton(),
-
                 const SizedBox(height: 18),
-
                 TextButton(
                   onPressed: () => context.go("/register"),
                   child: const Text("Don’t have an account? Create one"),
@@ -331,7 +330,9 @@ class _LoginScreenState extends State<LoginScreen>
         textInputAction: TextInputAction.done,
         onFieldSubmitted: (_) => _handleLogin(),
         validator: (v) =>
-            v != null && v.length >= 6 ? null : "Minimum 6 characters",
+            v != null && v.trim().length >= 6
+                ? null
+                : "Minimum 6 characters",
         decoration: _inputDecoration(
           label: "Password",
           icon: Icons.lock_outline,
@@ -401,3 +402,4 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 }
+

@@ -6,7 +6,7 @@ import 'api_client.dart';
 
 class AuthService {
   // =========================
-  // TOKEN STORAGE (SharedPreferences)
+  // TOKEN STORAGE
   // =========================
   static const String _accessTokenKey = "access_token";
   static const String _refreshTokenKey = "refresh_token";
@@ -25,18 +25,18 @@ class AuthService {
   static bool _initialized = false;
 
   // =========================
-  // 🔁 INIT (SAFE, IDPOTENT)
+  // 🔁 INIT (SAFE & IDEMPOTENT)
   // =========================
   static Future<void> init() async {
     if (_initialized) return;
 
     final prefs = await SharedPreferences.getInstance();
-    final accessToken = prefs.getString(_accessTokenKey);
+    final token = prefs.getString(_accessTokenKey);
 
-    if (accessToken != null && !JwtDecoder.isExpired(accessToken)) {
-      cachedLoginState = true;
-    } else {
-      cachedLoginState = false;
+    cachedLoginState =
+        token != null && !JwtDecoder.isExpired(token);
+
+    if (!cachedLoginState) {
       await _clearTokens(prefs);
     }
 
@@ -46,7 +46,10 @@ class AuthService {
   // =========================
   // 🆕 REGISTER (PUBLIC)
   // =========================
-  static Future<bool> register(String email, String password) async {
+  static Future<bool> register(
+    String email,
+    String password,
+  ) async {
     final response = await ApiClient.postPublic(
       "/register",
       {
@@ -55,8 +58,8 @@ class AuthService {
       },
     );
 
-    if (response.statusCode != 200 && response.statusCode != 201) {
-      print("REGISTER FAILED ${response.statusCode}: ${response.body}");
+    if (response.statusCode != 200 &&
+        response.statusCode != 201) {
       return false;
     }
 
@@ -64,9 +67,12 @@ class AuthService {
   }
 
   // =========================
-  // 🔐 LOGIN
+  // 🔐 LOGIN (OAUTH2 FORM)
   // =========================
-  static Future<bool> login(String email, String password) async {
+  static Future<bool> login(
+    String email,
+    String password,
+  ) async {
     final response = await ApiClient.postForm(
       "/login",
       {
@@ -76,7 +82,6 @@ class AuthService {
     );
 
     if (response.statusCode != 200) {
-      print("LOGIN FAILED ${response.statusCode}: ${response.body}");
       return false;
     }
 
@@ -110,17 +115,17 @@ class AuthService {
   // =========================
   // 🎟️ GET ACCESS TOKEN
   // =========================
+  /// IMPORTANT:
+  /// - Does NOT refresh
+  /// - ApiClient handles refresh & retry
   static Future<String?> getAccessToken() async {
     final prefs = await SharedPreferences.getInstance();
-    final accessToken = prefs.getString(_accessTokenKey);
+    final token = prefs.getString(_accessTokenKey);
 
-    if (accessToken == null) return null;
+    if (token == null) return null;
+    if (JwtDecoder.isExpired(token)) return null;
 
-    if (!JwtDecoder.isExpired(accessToken)) {
-      return accessToken;
-    }
-
-    return _refreshAccessToken();
+    return token;
   }
 
   // =========================
@@ -134,50 +139,14 @@ class AuthService {
   // =========================
   // 💾 SAVE ACCESS TOKEN
   // =========================
-  static Future<void> saveAccessToken(String accessToken) async {
+  static Future<void> saveAccessToken(
+    String accessToken,
+  ) async {
     if (JwtDecoder.isExpired(accessToken)) return;
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_accessTokenKey, accessToken);
     cachedLoginState = true;
-  }
-
-  // =========================
-  // 🔁 REFRESH ACCESS TOKEN
-  // =========================
-  static Future<String?> _refreshAccessToken() async {
-    final refreshToken = await getRefreshToken();
-    if (refreshToken == null) {
-      await logout();
-      return null;
-    }
-
-    try {
-      final response = await ApiClient.postPublic(
-        "/refresh",
-        {"refresh_token": refreshToken},
-      );
-
-      if (response.statusCode != 200) {
-        await logout();
-        return null;
-      }
-
-      final data = jsonDecode(response.body);
-      final newAccessToken = data["access_token"];
-
-      if (newAccessToken == null ||
-          JwtDecoder.isExpired(newAccessToken)) {
-        await logout();
-        return null;
-      }
-
-      await saveAccessToken(newAccessToken);
-      return newAccessToken;
-    } catch (_) {
-      await logout();
-      return null;
-    }
   }
 
   // =========================
@@ -189,7 +158,8 @@ class AuthService {
     final accessToken = data["access_token"];
     final refreshToken = data["refresh_token"];
 
-    if (accessToken == null || JwtDecoder.isExpired(accessToken)) {
+    if (accessToken == null ||
+        JwtDecoder.isExpired(accessToken)) {
       return false;
     }
 
@@ -235,7 +205,8 @@ class AuthService {
   // =================================================
   // 📥 LOAD SAVED CREDENTIALS
   // =================================================
-  static Future<Map<String, String>> loadSavedCredentials() async {
+  static Future<Map<String, String>>
+      loadSavedCredentials() async {
     final rememberMe =
         await _secureStorage.read(key: _rememberMeKey);
 
@@ -250,7 +221,7 @@ class AuthService {
   }
 
   // =================================================
-  // 🔎 REMEMBER ME STATUS (UI HELPER)
+  // 🔎 REMEMBER ME STATUS
   // =================================================
   static Future<bool> isRememberMeEnabled() async {
     final rememberMe =
@@ -265,7 +236,6 @@ class AuthService {
     final prefs = await SharedPreferences.getInstance();
     await _clearTokens(prefs);
 
-    // 🔐 Remove password only (keep email)
     await _secureStorage.delete(key: _savedPasswordKey);
 
     cachedLoginState = false;
