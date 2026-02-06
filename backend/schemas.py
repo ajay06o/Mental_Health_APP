@@ -13,23 +13,11 @@ class UserCreate(BaseModel):
     )
     password: str = Field(
         ...,
-        min_length=8,
+        min_length=6,   # ✅ match Flutter validation
         max_length=128,
-        example="StrongPass123!",
-        description="Password (min 8 chars, strong recommended)",
+        example="password123",
+        description="Password (min 6 characters)",
     )
-
-    @field_validator("password")
-    @classmethod
-    def validate_password_strength(cls, value: str):
-        """
-        Password strength validation (Pydantic v2 compatible)
-        """
-        if value.islower() or value.isupper():
-            raise ValueError("Password must include mixed case letters")
-        if value.isalpha():
-            raise ValueError("Password must include numbers or symbols")
-        return value
 
 
 class TokenResponse(BaseModel):
@@ -108,18 +96,7 @@ class ProfileUpdate(BaseModel):
     )
     password: Optional[str] = Field(
         None,
-        min_length=8,
+        min_length=6,   # ✅ match Flutter
         max_length=128,
-        example="NewStrongPass123!",
+        example="newpassword123",
     )
-
-    @field_validator("password")
-    @classmethod
-    def validate_optional_password(cls, value: Optional[str]):
-        if value is None:
-            return value
-        if value.islower() or value.isupper():
-            raise ValueError("Password must include mixed case letters")
-        if value.isalpha():
-            raise ValueError("Password must include numbers or symbols")
-        return value
