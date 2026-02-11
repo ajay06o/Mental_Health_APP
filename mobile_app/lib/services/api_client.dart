@@ -28,7 +28,7 @@ class ApiClient {
   static Future<String?>? _refreshFuture;
 
   // =================================================
-  // 🧾 HEADERS
+  // 🧾 HEADERS BUILDER
   // =================================================
   static Future<Map<String, String>> _headers({
     bool json = true,
@@ -39,8 +39,14 @@ class ApiClient {
       "Accept": "application/json",
     };
 
-    if (json) headers["Content-Type"] = "application/json";
-    if (isForm) headers["Content-Type"] = "application/x-www-form-urlencoded";
+    if (json) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    if (isForm) {
+      headers["Content-Type"] =
+          "application/x-www-form-urlencoded";
+    }
 
     if (withAuth) {
       final token = await AuthService.getAccessToken();
@@ -53,35 +59,49 @@ class ApiClient {
   }
 
   // =================================================
-  // 🛡️ SAFE REQUEST HANDLER (WITH TOKEN REBUILD)
+  // 🛡️ SAFE REQUEST HANDLER (AUTO REFRESH)
   // =================================================
   static Future<http.Response> _safeRequest(
     Future<http.Response> Function() request, {
     Duration? timeout,
+    bool retrying = false,
   }) async {
     try {
       final response =
           await request().timeout(timeout ?? _defaultTimeout);
 
+      // ✅ Success
       if (response.statusCode != 401) {
         return response;
       }
 
-      // 🔁 Attempt refresh ONCE
+      // ❌ If already retried, logout
+      if (retrying) {
+        await AuthService.logout();
+        throw Exception("SESSION_EXPIRED");
+      }
+
+      // 🔁 Try refresh
       final newToken = await _refreshTokenQueued();
       if (newToken == null) {
         await AuthService.logout();
         throw Exception("SESSION_EXPIRED");
       }
 
-      // 🔁 Retry with NEW token (headers rebuilt inside request)
-      return await request().timeout(timeout ?? _defaultTimeout);
+      // 🔁 Retry once with fresh token
+      return await _safeRequest(
+        request,
+        timeout: timeout,
+        retrying: true,
+      );
     } on TimeoutException {
       throw Exception("REQUEST_TIMEOUT");
     } on SocketException {
       throw Exception("NO_INTERNET");
     } on FormatException {
       throw Exception("INVALID_RESPONSE");
+    } catch (e) {
+      rethrow;
     }
   }
 
@@ -96,8 +116,12 @@ class ApiClient {
   }
 
   static Future<String?> _refreshToken() async {
-    final refreshToken = await AuthService.getRefreshToken();
-    if (refreshToken == null || refreshToken.isEmpty) return null;
+    final refreshToken =
+        await AuthService.getRefreshToken();
+
+    if (refreshToken == null || refreshToken.isEmpty) {
+      return null;
+    }
 
     try {
       final response = await _client
@@ -107,16 +131,25 @@ class ApiClient {
               "Content-Type": "application/json",
               "Accept": "application/json",
             },
-            body: jsonEncode({"refresh_token": refreshToken}),
+            body: jsonEncode(
+              {"refresh_token": refreshToken},
+            ),
           )
           .timeout(_defaultTimeout);
 
-      if (response.statusCode != 200) return null;
+      if (response.statusCode != 200) {
+        return null;
+      }
 
-      final data = jsonDecode(response.body);
+      final Map<String, dynamic> data =
+          jsonDecode(response.body);
+
       final newToken = data["access_token"];
 
-      if (newToken == null || newToken.isEmpty) return null;
+      if (newToken == null ||
+          newToken.isEmpty) {
+        return null;
+      }
 
       await AuthService.saveAccessToken(newToken);
       return newToken;
@@ -128,13 +161,20 @@ class ApiClient {
   // =================================================
   // 🌐 PUBLIC GET
   // =================================================
-  static Future<http.Response> getPublic(String endpoint) async {
-    return _client
-        .get(
-          Uri.parse("$baseUrl$endpoint"),
-          headers: await _headers(),
-        )
-        .timeout(_defaultTimeout);
+  static Future<http.Response> getPublic(
+      String endpoint) async {
+    try {
+      return await _client
+          .get(
+            Uri.parse("$baseUrl$endpoint"),
+            headers: await _headers(),
+          )
+          .timeout(_defaultTimeout);
+    } on TimeoutException {
+      throw Exception("REQUEST_TIMEOUT");
+    } on SocketException {
+      throw Exception("NO_INTERNET");
+    }
   }
 
   // =================================================
@@ -156,13 +196,19 @@ class ApiClient {
     String endpoint,
     Map<String, dynamic> body,
   ) async {
-    return _client
-        .post(
-          Uri.parse("$baseUrl$endpoint"),
-          headers: await _headers(),
-          body: jsonEncode(body),
-        )
-        .timeout(_defaultTimeout);
+    try {
+      return await _client
+          .post(
+            Uri.parse("$baseUrl$endpoint"),
+            headers: await _headers(),
+            body: jsonEncode(body),
+          )
+          .timeout(_defaultTimeout);
+    } on TimeoutException {
+      throw Exception("REQUEST_TIMEOUT");
+    } on SocketException {
+      throw Exception("NO_INTERNET");
+    }
   }
 
   // =================================================
@@ -204,17 +250,22 @@ class ApiClient {
     String endpoint,
     Map<String, String> body,
   ) async {
-    return _client
-        .post(
-          Uri.parse("$baseUrl$endpoint"),
-          headers: await _headers(
-            json: false,
-            withAuth: false,
-            isForm: true,
-          ),
-          body: body,
-        )
-        .timeout(_defaultTimeout);
+    try {
+      return await _client
+          .post(
+            Uri.parse("$baseUrl$endpoint"),
+            headers: await _headers(
+              json: false,
+              isForm: true,
+            ),
+            body: body,
+          )
+          .timeout(_defaultTimeout);
+    } on TimeoutException {
+      throw Exception("REQUEST_TIMEOUT");
+    } on SocketException {
+      throw Exception("NO_INTERNET");
+    }
   }
 
   // =================================================

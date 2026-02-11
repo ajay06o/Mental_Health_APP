@@ -2,9 +2,11 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime
 from typing import Optional
 
+
 # =========================
 # AUTH SCHEMAS
 # =========================
+
 class UserCreate(BaseModel):
     email: EmailStr = Field(
         ...,
@@ -13,11 +15,26 @@ class UserCreate(BaseModel):
     )
     password: str = Field(
         ...,
-        min_length=6,   # ✅ match Flutter validation
+        min_length=6,
         max_length=128,
         example="password123",
         description="Password (min 6 characters)",
     )
+
+    # ✅ Remove accidental spaces from email
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return value.strip().lower()
+
+    # ✅ Prevent empty or whitespace-only passwords
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Password cannot be empty")
+        return value
 
 
 class TokenResponse(BaseModel):
@@ -34,18 +51,22 @@ class TokenResponse(BaseModel):
         description="OAuth2 token type",
     )
 
+
 # =========================
 # REFRESH TOKEN
 # =========================
+
 class RefreshTokenRequest(BaseModel):
     refresh_token: str = Field(
         ...,
         description="Valid refresh token",
     )
 
+
 # =========================
 # EMOTION SCHEMAS
 # =========================
+
 class EmotionCreate(BaseModel):
     text: str = Field(
         ...,
@@ -54,6 +75,15 @@ class EmotionCreate(BaseModel):
         example="I feel very stressed and anxious today",
         description="User input text for emotion detection",
     )
+
+    # ✅ Prevent empty spaces being submitted
+    @field_validator("text")
+    @classmethod
+    def validate_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Text cannot be empty")
+        return value
 
 
 class EmotionResponse(BaseModel):
@@ -78,9 +108,11 @@ class EmotionResponse(BaseModel):
         example="2026-01-29T10:15:30Z",
     )
 
+
 # =========================
 # PROFILE SCHEMAS
 # =========================
+
 class ProfileResponse(BaseModel):
     user_id: int
     email: EmailStr
@@ -96,7 +128,23 @@ class ProfileUpdate(BaseModel):
     )
     password: Optional[str] = Field(
         None,
-        min_length=6,   # ✅ match Flutter
+        min_length=6,
         max_length=128,
         example="newpassword123",
     )
+
+    @field_validator("email")
+    @classmethod
+    def normalize_optional_email(cls, value: Optional[str]) -> Optional[str]:
+        if value:
+            return value.strip().lower()
+        return value
+
+    @field_validator("password")
+    @classmethod
+    def validate_optional_password(cls, value: Optional[str]) -> Optional[str]:
+        if value:
+            value = value.strip()
+            if not value:
+                raise ValueError("Password cannot be empty")
+        return value
