@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'router/app_router.dart';
 import 'services/auth_service.dart';
+import 'services/api_client.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // ✅ IMPORTANT: Initialize auth state before app starts
+  // ✅ Initialize authentication state
   await AuthService.init();
+
+  // ✅ Warm up Render server (prevents first login timeout)
+  await ApiClient.warmUpServer();
 
   runApp(const MentalHealthApp());
 }

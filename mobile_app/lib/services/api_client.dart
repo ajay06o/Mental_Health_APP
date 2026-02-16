@@ -12,10 +12,10 @@ class ApiClient {
       "https://mental-health-app-1-rv33.onrender.com";
 
   // =================================================
-  // ⏱️ TIMEOUTS
+  // ⏱️ TIMEOUTS (UPDATED FOR RENDER COLD START)
   // =================================================
-  static const Duration _defaultTimeout = Duration(seconds: 12);
-  static const Duration _predictTimeout = Duration(seconds: 45);
+  static const Duration _defaultTimeout = Duration(seconds: 60);
+  static const Duration _predictTimeout = Duration(seconds: 90);
 
   // =================================================
   // 🔁 HTTP CLIENT
@@ -26,6 +26,20 @@ class ApiClient {
   // 🔒 REFRESH LOCK (SINGLE FLIGHT)
   // =================================================
   static Future<String?>? _refreshFuture;
+
+  // =================================================
+  // 🔥 SERVER WARM UP (CALL ON APP START)
+  // =================================================
+  static Future<void> warmUpServer() async {
+    try {
+      await _client
+          .get(Uri.parse(baseUrl))
+          .timeout(_defaultTimeout);
+      print("✅ Server Warmed Up");
+    } catch (e) {
+      print("⚠️ Warm-up failed: $e");
+    }
+  }
 
   // =================================================
   // 🧾 HEADERS BUILDER
@@ -59,7 +73,7 @@ class ApiClient {
   }
 
   // =================================================
-  // 🛡️ SAFE REQUEST HANDLER (AUTO REFRESH)
+  // 🛡️ SAFE REQUEST HANDLER (AUTO REFRESH + BETTER ERRORS)
   // =================================================
   static Future<http.Response> _safeRequest(
     Future<http.Response> Function() request, {
@@ -75,7 +89,7 @@ class ApiClient {
         return response;
       }
 
-      // ❌ If already retried, logout
+      // ❌ If already retried → logout
       if (retrying) {
         await AuthService.logout();
         throw Exception("SESSION_EXPIRED");
@@ -88,18 +102,19 @@ class ApiClient {
         throw Exception("SESSION_EXPIRED");
       }
 
-      // 🔁 Retry once with fresh token
+      // 🔁 Retry once
       return await _safeRequest(
         request,
         timeout: timeout,
         retrying: true,
       );
     } on TimeoutException {
-      throw Exception("REQUEST_TIMEOUT");
+      throw Exception(
+          "Server is waking up. Please wait a moment and try again.");
     } on SocketException {
-      throw Exception("NO_INTERNET");
+      throw Exception("No internet connection.");
     } on FormatException {
-      throw Exception("INVALID_RESPONSE");
+      throw Exception("Invalid server response.");
     } catch (e) {
       rethrow;
     }
@@ -146,8 +161,7 @@ class ApiClient {
 
       final newToken = data["access_token"];
 
-      if (newToken == null ||
-          newToken.isEmpty) {
+      if (newToken == null || newToken.isEmpty) {
         return null;
       }
 
@@ -171,9 +185,10 @@ class ApiClient {
           )
           .timeout(_defaultTimeout);
     } on TimeoutException {
-      throw Exception("REQUEST_TIMEOUT");
+      throw Exception(
+          "Server is waking up. Please try again.");
     } on SocketException {
-      throw Exception("NO_INTERNET");
+      throw Exception("No internet connection.");
     }
   }
 
@@ -205,9 +220,10 @@ class ApiClient {
           )
           .timeout(_defaultTimeout);
     } on TimeoutException {
-      throw Exception("REQUEST_TIMEOUT");
+      throw Exception(
+          "Server is waking up. Please try again.");
     } on SocketException {
-      throw Exception("NO_INTERNET");
+      throw Exception("No internet connection.");
     }
   }
 
@@ -262,9 +278,10 @@ class ApiClient {
           )
           .timeout(_defaultTimeout);
     } on TimeoutException {
-      throw Exception("REQUEST_TIMEOUT");
+      throw Exception(
+          "Server is waking up. Please try again.");
     } on SocketException {
-      throw Exception("NO_INTERNET");
+      throw Exception("No internet connection.");
     }
   }
 

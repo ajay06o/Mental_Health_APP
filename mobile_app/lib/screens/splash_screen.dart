@@ -127,7 +127,7 @@ class _SplashScreenState extends State<SplashScreen>
                   SizedBox(height: 24),
 
                   Text(
-                    "MindEase",
+                    "Mental Health",
                     style: TextStyle(
                       fontSize: 34,
                       fontWeight: FontWeight.bold,
