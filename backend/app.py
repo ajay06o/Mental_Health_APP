@@ -71,13 +71,11 @@ models.Base.metadata.create_all(bind=engine)
 async def lifespan(app: FastAPI):
     logger.info("🚀 Starting Mental Health API")
 
-    # Start scheduler once
     if os.environ.get("RENDER") == "true":
         start_scheduler()
         logger.info("⏰ Scheduler started")
 
     yield
-
     logger.info("🛑 Shutting down Mental Health API")
 
 # =====================================================
@@ -85,16 +83,15 @@ async def lifespan(app: FastAPI):
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="6.1.0",
+    version="6.2.0",
     lifespan=lifespan,
 )
 
 app.include_router(social_router)
 
 # =====================================================
-# CORS (PRODUCTION + LOCAL SAFE)
+# CORS
 # =====================================================
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -106,6 +103,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 # =====================================================
 # GLOBAL ERROR HANDLER
 # =====================================================
@@ -156,13 +154,19 @@ def get_current_user(
     return user
 
 # =====================================================
-# SEVERITY LOGIC
+# SEVERITY LOGIC (IMPROVED)
 # =====================================================
 def calculate_severity(emotion: str, confidence: float) -> int:
-    emotion = emotion.lower()
+    emotion = emotion.lower().strip()
 
     if emotion == "suicidal":
         return 5
+    if emotion in ["depression", "angry", "anxiety"]:
+        return 4
+    if emotion == "sad":
+        return 3
+    if emotion == "happy":
+        return 1
     if confidence >= 0.8:
         return 4
     if confidence >= 0.6:
@@ -240,7 +244,7 @@ def refresh(payload: RefreshTokenRequest):
     )
 
 # =====================================================
-# PREDICT
+# PREDICT (FULL DEBUG SAFE VERSION)
 # =====================================================
 @app.post("/predict", response_model=EmotionResponse)
 def predict(
@@ -248,11 +252,37 @@ def predict(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    result = final_prediction(data.text)
+    if not data.text or not data.text.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Text cannot be empty",
+        )
 
-    emotion = result["final_mental_state"].lower()
-    confidence = float(result["confidence"])
-    severity = calculate_severity(emotion, confidence)
+    logger.info(f"📝 INPUT: {data.text}")
+
+    try:
+        result = final_prediction(data.text)
+        logger.info(f"🧠 MODEL OUTPUT: {result}")
+
+        emotion_raw = result.get("final_mental_state", "Neutral")
+        confidence = float(result.get("confidence", 0.0))
+
+        emotion = emotion_raw.strip().lower()
+        if not emotion:
+            emotion = "neutral"
+
+        severity = calculate_severity(emotion, confidence)
+
+        logger.info(
+            f"✅ FINAL → emotion={emotion}, confidence={confidence}, severity={severity}"
+        )
+
+    except Exception as e:
+        logger.error(f"❌ Prediction failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Prediction failed",
+        )
 
     record = EmotionHistory(
         user_id=user.id,
