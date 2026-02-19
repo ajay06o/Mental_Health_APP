@@ -7,7 +7,8 @@ import logging
 from models import SocialAccount, User, EmotionHistory
 from ai_models.mental_health_model import final_prediction
 from security import verify_access_token
-from app import get_db
+from dependencies import get_db
+
 from utils.crypto import encrypt_token, decrypt_token
 from utils.alerts import trigger_crisis_alert
 

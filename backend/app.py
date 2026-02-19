@@ -23,7 +23,8 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from database import SessionLocal, engine
+from database import engine
+from dependencies import get_db
 from models import User, EmotionHistory
 from schemas import (
     UserCreate,
@@ -52,9 +53,8 @@ from routes.social import router as social_router
 # Scheduler
 from scheduler import start_scheduler
 
-
 # =====================================================
-# LOGGER SETUP
+# LOGGER
 # =====================================================
 logging.basicConfig(
     level=logging.INFO,
@@ -62,22 +62,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger("mental_health_api")
 
-
 # =====================================================
 # DATABASE INIT
 # =====================================================
 models.Base.metadata.create_all(bind=engine)
 
-
 # =====================================================
-# LIFESPAN EVENTS
+# LIFESPAN (RENDER SAFE)
 # =====================================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 Starting Mental Health API")
 
-    # Prevent double scheduler in reload mode
-    if not os.getenv("RUN_MAIN") or os.getenv("RUN_MAIN") == "true":
+    # Prevent duplicate scheduler in reload mode
+    if os.environ.get("RENDER") == "true" or os.environ.get("RUN_MAIN") == "true":
         start_scheduler()
         logger.info("⏰ Scheduler started")
 
@@ -85,30 +83,27 @@ async def lifespan(app: FastAPI):
 
     logger.info("🛑 Shutting down Mental Health API")
 
-
 # =====================================================
 # FASTAPI APP
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="5.0.0",
+    version="5.1.0",
     lifespan=lifespan,
 )
 
 app.include_router(social_router)
 
-
 # =====================================================
-# CORS
+# CORS (Restrict in Production)
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Restrict in production
+    allow_origins=["*"],  # 🔴 Restrict in production
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 # =====================================================
 # GLOBAL ERROR HANDLER
@@ -121,7 +116,6 @@ async def global_exception_handler(request, exc):
         content={"detail": "Internal server error"},
     )
 
-
 # =====================================================
 # HEALTH
 # =====================================================
@@ -129,28 +123,14 @@ async def global_exception_handler(request, exc):
 def root():
     return {"status": "OK", "message": "Backend running 🚀"}
 
-
 @app.get("/health")
 def health():
     return {"status": "healthy"}
-
-
-# =====================================================
-# DB DEPENDENCY
-# =====================================================
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
 
 # =====================================================
 # AUTH DEPENDENCY
 # =====================================================
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
-
 
 def get_current_user(
     token: str = Depends(oauth2_scheme),
@@ -174,9 +154,8 @@ def get_current_user(
 
     return user
 
-
 # =====================================================
-# SEVERITY CALCULATION
+# SEVERITY LOGIC
 # =====================================================
 def calculate_severity(emotion: str, confidence: float) -> int:
     emotion = emotion.lower()
@@ -191,7 +170,6 @@ def calculate_severity(emotion: str, confidence: float) -> int:
         return 2
     return 1
 
-
 # =====================================================
 # REGISTER
 # =====================================================
@@ -205,17 +183,15 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
             detail="Email already registered",
         )
 
-    db.add(
-        User(
-            email=email,
-            password=hash_password(user.password),
-        )
-    )
+    db.add(User(
+        email=email,
+        password=hash_password(user.password),
+    ))
+
     db.commit()
-
     logger.info(f"User registered: {email}")
-    return {"message": "User registered successfully"}
 
+    return {"message": "User registered successfully"}
 
 # =====================================================
 # LOGIN
@@ -237,15 +213,14 @@ def login(
 
     logger.info(f"User login: {email}")
 
-    return {
-        "access_token": create_access_token({"sub": user.email}),
-        "refresh_token": create_refresh_token({"sub": user.email}),
-        "token_type": "bearer",
-    }
-
+    return TokenResponse(
+        access_token=create_access_token({"sub": user.email}),
+        refresh_token=create_refresh_token({"sub": user.email}),
+        token_type="bearer",
+    )
 
 # =====================================================
-# REFRESH TOKEN
+# REFRESH
 # =====================================================
 @app.post("/refresh", response_model=TokenResponse)
 def refresh(payload: RefreshTokenRequest):
@@ -257,12 +232,11 @@ def refresh(payload: RefreshTokenRequest):
             detail="Invalid refresh token",
         )
 
-    return {
-        "access_token": create_access_token({"sub": email}),
-        "refresh_token": create_refresh_token({"sub": email}),
-        "token_type": "bearer",
-    }
-
+    return TokenResponse(
+        access_token=create_access_token({"sub": email}),
+        refresh_token=create_refresh_token({"sub": email}),
+        token_type="bearer",
+    )
 
 # =====================================================
 # PREDICT
@@ -294,8 +268,12 @@ def predict(
 
     logger.info(f"Prediction stored for user {user.id}")
 
-    return record
-
+    return EmotionResponse(
+        emotion=record.emotion,
+        confidence=record.confidence,
+        severity=record.severity,
+        timestamp=record.timestamp,
+    )
 
 # =====================================================
 # HISTORY
@@ -312,8 +290,15 @@ def history(
         .all()
     )
 
-    return records
-
+    return [
+        EmotionResponse(
+            emotion=r.emotion,
+            confidence=r.confidence,
+            severity=r.severity,
+            timestamp=r.timestamp,
+        )
+        for r in records
+    ]
 
 # =====================================================
 # PROFILE
@@ -326,30 +311,25 @@ def profile(
     total_entries = (
         db.query(func.count(EmotionHistory.id))
         .filter(EmotionHistory.user_id == user.id)
-        .scalar()
-        or 0
+        .scalar() or 0
     )
 
     avg_severity = (
         db.query(func.avg(EmotionHistory.severity))
         .filter(EmotionHistory.user_id == user.id)
-        .scalar()
-        or 0
+        .scalar() or 0
     )
-
-    high_risk = avg_severity >= 3.5
 
     return ProfileResponse(
         user_id=user.id,
         email=user.email,
         total_entries=int(total_entries),
         avg_severity=round(float(avg_severity), 2),
-        high_risk=high_risk,
+        high_risk=avg_severity >= 3.5,
         emergency_email=user.emergency_email,
         emergency_name=user.emergency_name,
         alerts_enabled=user.alerts_enabled,
     )
-
 
 # =====================================================
 # UPDATE PROFILE
@@ -361,21 +341,17 @@ def update_profile(
     db: Session = Depends(get_db),
 ):
     if payload.email:
-        user.email = payload.email
+        user.email = payload.email.strip().lower()
 
     if payload.password:
         user.password = hash_password(payload.password)
 
-    if payload.emergency_email:
-        user.emergency_email = payload.emergency_email
-
-    if payload.emergency_name:
-        user.emergency_name = payload.emergency_name
-
-    if payload.alerts_enabled is not None:
-        user.alerts_enabled = payload.alerts_enabled
+    user.emergency_email = payload.emergency_email
+    user.emergency_name = payload.emergency_name
+    user.alerts_enabled = payload.alerts_enabled
 
     db.commit()
 
     logger.info(f"Profile updated for user {user.id}")
+
     return {"message": "Profile updated successfully"}
