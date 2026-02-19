@@ -92,19 +92,20 @@ app = FastAPI(
 app.include_router(social_router)
 
 # =====================================================
-# CORS (FINAL CORRECT VERSION)
+# CORS (PRODUCTION + LOCAL SAFE)
 # =====================================================
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://mental-health-app-zpng.onrender.com",
+        "https://mental-health-app-1-rv33.onrender.com",
     ],
     allow_origin_regex=r"http://localhost:\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 # =====================================================
 # GLOBAL ERROR HANDLER
 # =====================================================
