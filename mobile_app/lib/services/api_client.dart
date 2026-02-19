@@ -9,7 +9,8 @@ class ApiClient {
   // 🌍 BACKEND
   // =================================================
   static const String baseUrl =
-      "https://mental-health-app-zpng.onrender.com/health";
+    "https://mental-health-app-zpng.onrender.com";
+
 
   static const Duration _defaultTimeout = Duration(seconds: 60);
   static const Duration _predictTimeout = Duration(seconds: 90);
