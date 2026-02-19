@@ -11,38 +11,24 @@ class ApiClient {
   static const String baseUrl =
       "https://mental-health-app-1-rv33.onrender.com";
 
-  // =================================================
-  // ⏱️ TIMEOUTS (UPDATED FOR RENDER COLD START)
-  // =================================================
   static const Duration _defaultTimeout = Duration(seconds: 60);
   static const Duration _predictTimeout = Duration(seconds: 90);
 
-  // =================================================
-  // 🔁 HTTP CLIENT
-  // =================================================
   static final http.Client _client = http.Client();
 
-  // =================================================
-  // 🔒 REFRESH LOCK (SINGLE FLIGHT)
-  // =================================================
   static Future<String?>? _refreshFuture;
 
   // =================================================
-  // 🔥 SERVER WARM UP (CALL ON APP START)
+  // 🔥 SERVER WARM UP
   // =================================================
   static Future<void> warmUpServer() async {
     try {
-      await _client
-          .get(Uri.parse(baseUrl))
-          .timeout(_defaultTimeout);
-      print("✅ Server Warmed Up");
-    } catch (e) {
-      print("⚠️ Warm-up failed: $e");
-    }
+      await _client.get(Uri.parse(baseUrl)).timeout(_defaultTimeout);
+    } catch (_) {}
   }
 
   // =================================================
-  // 🧾 HEADERS BUILDER
+  // 🧾 HEADERS
   // =================================================
   static Future<Map<String, String>> _headers({
     bool json = true,
@@ -73,7 +59,7 @@ class ApiClient {
   }
 
   // =================================================
-  // 🛡️ SAFE REQUEST HANDLER (AUTO REFRESH + BETTER ERRORS)
+  // 🛡 SAFE REQUEST
   // =================================================
   static Future<http.Response> _safeRequest(
     Future<http.Response> Function() request, {
@@ -84,25 +70,21 @@ class ApiClient {
       final response =
           await request().timeout(timeout ?? _defaultTimeout);
 
-      // ✅ Success
       if (response.statusCode != 401) {
         return response;
       }
 
-      // ❌ If already retried → logout
       if (retrying) {
         await AuthService.logout();
-        throw Exception("SESSION_EXPIRED");
+        throw Exception("Session expired. Please login again.");
       }
 
-      // 🔁 Try refresh
       final newToken = await _refreshTokenQueued();
       if (newToken == null) {
         await AuthService.logout();
-        throw Exception("SESSION_EXPIRED");
+        throw Exception("Session expired. Please login again.");
       }
 
-      // 🔁 Retry once
       return await _safeRequest(
         request,
         timeout: timeout,
@@ -110,18 +92,16 @@ class ApiClient {
       );
     } on TimeoutException {
       throw Exception(
-          "Server is waking up. Please wait a moment and try again.");
+          "Server is waking up. Please wait a moment.");
     } on SocketException {
       throw Exception("No internet connection.");
     } on FormatException {
       throw Exception("Invalid server response.");
-    } catch (e) {
-      rethrow;
     }
   }
 
   // =================================================
-  // 🔁 REFRESH TOKEN (QUEUED)
+  // 🔁 REFRESH TOKEN
   // =================================================
   static Future<String?> _refreshTokenQueued() {
     _refreshFuture ??= _refreshToken();
@@ -139,26 +119,20 @@ class ApiClient {
     }
 
     try {
-      final response = await _client
-          .post(
-            Uri.parse("$baseUrl/refresh"),
-            headers: const {
-              "Content-Type": "application/json",
-              "Accept": "application/json",
-            },
-            body: jsonEncode(
-              {"refresh_token": refreshToken},
-            ),
-          )
-          .timeout(_defaultTimeout);
+      final response = await _client.post(
+        Uri.parse("$baseUrl/refresh"),
+        headers: const {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+        body: jsonEncode(
+          {"refresh_token": refreshToken},
+        ),
+      );
 
-      if (response.statusCode != 200) {
-        return null;
-      }
+      if (response.statusCode != 200) return null;
 
-      final Map<String, dynamic> data =
-          jsonDecode(response.body);
-
+      final data = jsonDecode(response.body);
       final newToken = data["access_token"];
 
       if (newToken == null || newToken.isEmpty) {
@@ -173,125 +147,141 @@ class ApiClient {
   }
 
   // =================================================
+  // 🔄 RESPONSE PARSER
+  // =================================================
+  static dynamic _parseResponse(http.Response response) {
+    if (response.body.isEmpty) return null;
+
+    final decoded = jsonDecode(response.body);
+
+    if (response.statusCode >= 200 &&
+        response.statusCode < 300) {
+      return decoded;
+    }
+
+    throw Exception(
+      decoded["detail"] ?? "Something went wrong",
+    );
+  }
+
+  // =================================================
   // 🌐 PUBLIC GET
   // =================================================
-  static Future<http.Response> getPublic(
-      String endpoint) async {
-    try {
-      return await _client
-          .get(
-            Uri.parse("$baseUrl$endpoint"),
-            headers: await _headers(),
-          )
-          .timeout(_defaultTimeout);
-    } on TimeoutException {
-      throw Exception(
-          "Server is waking up. Please try again.");
-    } on SocketException {
-      throw Exception("No internet connection.");
-    }
+  static Future<dynamic> getPublic(String endpoint) async {
+    final response = await _client.get(
+      Uri.parse("$baseUrl$endpoint"),
+      headers: await _headers(),
+    );
+
+    return _parseResponse(response);
+  }
+
+  // =================================================
+  // 🌐 PUBLIC POST
+  // =================================================
+  static Future<dynamic> postPublic(
+    String endpoint,
+    Map<String, dynamic> body,
+  ) async {
+    final response = await _client.post(
+      Uri.parse("$baseUrl$endpoint"),
+      headers: await _headers(),
+      body: jsonEncode(body),
+    );
+
+    return _parseResponse(response);
   }
 
   // =================================================
   // 🔐 AUTH GET
   // =================================================
-  static Future<http.Response> get(String endpoint) {
-    return _safeRequest(() async {
+  static Future<dynamic> get(String endpoint) async {
+    final response = await _safeRequest(() async {
       return _client.get(
         Uri.parse("$baseUrl$endpoint"),
         headers: await _headers(withAuth: true),
       );
     });
+
+    return _parseResponse(response);
   }
 
   // =================================================
-  // 🌐 PUBLIC POST (JSON)
+  // 🔐 AUTH POST
   // =================================================
-  static Future<http.Response> postPublic(
+  static Future<dynamic> post(
     String endpoint,
     Map<String, dynamic> body,
   ) async {
-    try {
-      return await _client
-          .post(
-            Uri.parse("$baseUrl$endpoint"),
-            headers: await _headers(),
-            body: jsonEncode(body),
-          )
-          .timeout(_defaultTimeout);
-    } on TimeoutException {
-      throw Exception(
-          "Server is waking up. Please try again.");
-    } on SocketException {
-      throw Exception("No internet connection.");
-    }
-  }
-
-  // =================================================
-  // 🔐 AUTH POST (JSON)
-  // =================================================
-  static Future<http.Response> post(
-    String endpoint,
-    Map<String, dynamic> body,
-  ) {
-    return _safeRequest(() async {
+    final response = await _safeRequest(() async {
       return _client.post(
         Uri.parse("$baseUrl$endpoint"),
         headers: await _headers(withAuth: true),
         body: jsonEncode(body),
       );
     });
+
+    return _parseResponse(response);
   }
 
   // =================================================
-  // 🔐 AUTH PUT (JSON)
+  // 🔐 AUTH PUT
   // =================================================
-  static Future<http.Response> put(
+  static Future<dynamic> put(
     String endpoint,
     Map<String, dynamic> body,
-  ) {
-    return _safeRequest(() async {
+  ) async {
+    final response = await _safeRequest(() async {
       return _client.put(
         Uri.parse("$baseUrl$endpoint"),
         headers: await _headers(withAuth: true),
         body: jsonEncode(body),
       );
     });
+
+    return _parseResponse(response);
   }
 
   // =================================================
-  // 🔑 LOGIN (FORM – OAuth2)
+  // 🔐 AUTH DELETE (NEW)
   // =================================================
-  static Future<http.Response> postForm(
+  static Future<dynamic> delete(String endpoint) async {
+    final response = await _safeRequest(() async {
+      return _client.delete(
+        Uri.parse("$baseUrl$endpoint"),
+        headers: await _headers(withAuth: true),
+      );
+    });
+
+    return _parseResponse(response);
+  }
+
+  // =================================================
+  // 🔑 LOGIN FORM
+  // =================================================
+  static Future<dynamic> postForm(
     String endpoint,
     Map<String, String> body,
   ) async {
-    try {
-      return await _client
-          .post(
-            Uri.parse("$baseUrl$endpoint"),
-            headers: await _headers(
-              json: false,
-              isForm: true,
-            ),
-            body: body,
-          )
-          .timeout(_defaultTimeout);
-    } on TimeoutException {
-      throw Exception(
-          "Server is waking up. Please try again.");
-    } on SocketException {
-      throw Exception("No internet connection.");
-    }
+    final response = await _client.post(
+      Uri.parse("$baseUrl$endpoint"),
+      headers: await _headers(
+        json: false,
+        isForm: true,
+      ),
+      body: body,
+    );
+
+    return _parseResponse(response);
   }
 
   // =================================================
   // 🧠 PREDICT (LONG RUNNING)
   // =================================================
-  static Future<http.Response> predict(
+  static Future<dynamic> predict(
     Map<String, dynamic> body,
-  ) {
-    return _safeRequest(
+  ) async {
+    final response = await _safeRequest(
       () async {
         return _client.post(
           Uri.parse("$baseUrl/predict"),
@@ -301,6 +291,8 @@ class ApiClient {
       },
       timeout: _predictTimeout,
     );
+
+    return _parseResponse(response);
   }
 
   // =================================================

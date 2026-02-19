@@ -28,7 +28,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 500),
     );
 
     _fadeAnimation =
@@ -45,11 +45,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     setState(() {
       _profileFuture = PredictService.fetchProfile();
     });
-  }
-
-  bool _isValidEmail(String email) {
-    final regex = RegExp(r"^[\w\.-]+@[\w\.-]+\.\w+$");
-    return regex.hasMatch(email);
   }
 
   @override
@@ -72,7 +67,9 @@ class _ProfileScreenState extends State<ProfileScreen>
         future: _profileFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(
+              child: CircularProgressIndicator(strokeWidth: 2),
+            );
           }
 
           if (snapshot.hasError) {
@@ -162,6 +159,9 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
+  // =============================
+  // STAT CARD
+  // =============================
   Widget _statCard(String title, String value) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -183,6 +183,9 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
+  // =============================
+  // EMERGENCY CARD
+  // =============================
   Widget _emergencyCard(
       String name, String email, bool enabled) {
     return Container(
@@ -201,8 +204,8 @@ class _ProfileScreenState extends State<ProfileScreen>
         children: [
           const Text(
             "🚨 Emergency Contact",
-            style:
-                TextStyle(fontWeight: FontWeight.bold),
+            style: TextStyle(
+                fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
           Text("Name: $name"),
@@ -221,6 +224,9 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
+  // =============================
+  // HIGH RISK ALERT
+  // =============================
   Widget _alertCard() {
     return Container(
       margin: const EdgeInsets.only(top: 12),
@@ -236,8 +242,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           Expanded(
             child: Text(
               "High risk patterns detected. Consider professional support.",
-              style:
-                  TextStyle(fontWeight: FontWeight.bold),
+              style: TextStyle(
+                  fontWeight: FontWeight.bold),
             ),
           ),
         ],
@@ -245,13 +251,16 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
+  // =============================
+  // LOGOUT
+  // =============================
   Widget _logoutButton() {
     return SizedBox(
       width: double.infinity,
       child: OutlinedButton.icon(
         icon: const Icon(Icons.logout),
         label: const Text("Logout"),
-        onPressed: _confirmLogout,
+        onPressed: () => _confirmLogout(),
       ),
     );
   }
@@ -262,8 +271,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       context: context,
       builder: (_) => AlertDialog(
         title: const Text("Confirm Logout"),
-        content:
-            const Text("Are you sure you want to logout?"),
+        content: const Text(
+            "Are you sure you want to logout?"),
         actions: [
           TextButton(
             onPressed: () =>
@@ -284,13 +293,12 @@ class _ProfileScreenState extends State<ProfileScreen>
           await SharedPreferences.getInstance();
       await prefs.remove("last_tab_index");
       await AuthService.logout();
-      if (!mounted) return;
       context.go("/login");
     }
   }
 
   // =============================
-  // EDIT PROFILE (FINAL CLEAN)
+  // EDIT PROFILE
   // =============================
   void _openEditProfileSheet(
       Map<String, dynamic> data) {
@@ -314,13 +322,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       builder: (_) {
         return StatefulBuilder(
           builder: (context, setModalState) {
-            bool validEmail =
-                _isValidEmail(emailController.text);
-            bool validEmergency =
-                emergencyEmailController.text.isEmpty ||
-                    _isValidEmail(
-                        emergencyEmailController.text);
-
             return Padding(
               padding: EdgeInsets.only(
                 left: 16,
@@ -344,16 +345,10 @@ class _ProfileScreenState extends State<ProfileScreen>
 
                     TextField(
                       controller: emailController,
-                      decoration: InputDecoration(
-                        labelText: "Email",
-                        errorText: validEmail
-                            ? null
-                            : "Invalid email",
-                      ),
-                      onChanged: (_) =>
-                          setModalState(() {}),
+                      decoration:
+                          const InputDecoration(
+                              labelText: "Email"),
                     ),
-
                     const SizedBox(height: 12),
 
                     TextField(
@@ -365,7 +360,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                               labelText:
                                   "New Password (optional)"),
                     ),
-
                     const SizedBox(height: 12),
 
                     TextField(
@@ -376,23 +370,16 @@ class _ProfileScreenState extends State<ProfileScreen>
                               labelText:
                                   "Emergency Contact Name"),
                     ),
-
                     const SizedBox(height: 12),
 
                     TextField(
                       controller:
                           emergencyEmailController,
-                      decoration: InputDecoration(
-                        labelText:
-                            "Emergency Contact Email",
-                        errorText: validEmergency
-                            ? null
-                            : "Invalid email",
-                      ),
-                      onChanged: (_) =>
-                          setModalState(() {}),
+                      decoration:
+                          const InputDecoration(
+                              labelText:
+                                  "Emergency Contact Email"),
                     ),
-
                     const SizedBox(height: 12),
 
                     SwitchListTile(
@@ -410,67 +397,70 @@ class _ProfileScreenState extends State<ProfileScreen>
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed:
-                            (!validEmail ||
-                                    !validEmergency ||
-                                    _saving)
-                                ? null
-                                : () async {
-                                    setState(() =>
-                                        _saving =
-                                            true);
+                        onPressed: _saving
+                            ? null
+                            : () async {
+                                setState(() =>
+                                    _saving =
+                                        true);
 
-                                    try {
-                                      await PredictService
-                                          .updateProfile(
-                                        email:
-                                            emailController
+                                try {
+                                  await PredictService
+                                      .updateProfile(
+                                    email:
+                                        emailController
+                                            .text
+                                            .trim(),
+                                    password:
+                                        passwordController
+                                                .text
+                                                .trim()
+                                                .isEmpty
+                                            ? null
+                                            : passwordController
                                                 .text
                                                 .trim(),
-                                        password:
-                                            passwordController
-                                                    .text
-                                                    .trim()
-                                                    .isEmpty
-                                                ? null
-                                                : passwordController
-                                                    .text
-                                                    .trim(),
-                                        emergencyName:
-                                            emergencyNameController
-                                                .text
-                                                .trim(),
-                                        emergencyEmail:
-                                            emergencyEmailController
-                                                .text
-                                                .trim(),
-                                        alertsEnabled:
-                                            alertsEnabled,
-                                      );
+                                    emergencyName:
+                                        emergencyNameController
+                                            .text
+                                            .trim(),
+                                    emergencyEmail:
+                                        emergencyEmailController
+                                            .text
+                                            .trim(),
+                                    alertsEnabled:
+                                        alertsEnabled,
+                                  );
 
-                                      if (!mounted)
-                                        return;
+                                  if (!mounted)
+                                    return;
 
-                                      Navigator.pop(
-                                          context);
+                                  Navigator.pop(
+                                      context);
 
-                                      _refreshProfile();
+                                  _refreshProfile();
 
-                                      ScaffoldMessenger
-                                              .of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                            content: Text(
-                                                "Profile updated successfully")),
-                                      );
-                                    } finally {
-                                      if (mounted) {
-                                        setState(() =>
-                                            _saving =
-                                                false);
-                                      }
-                                    }
-                                  },
+                                  ScaffoldMessenger.of(
+                                          context)
+                                      .showSnackBar(
+                                    const SnackBar(
+                                        content: Text(
+                                            "Profile updated successfully")),
+                                  );
+                                } catch (e) {
+                                  ScaffoldMessenger.of(
+                                          context)
+                                      .showSnackBar(
+                                    SnackBar(
+                                        content: Text(
+                                            e.toString())),
+                                  );
+                                } finally {
+                                  setState(() =>
+                                      _saving =
+                                          false);
+                                }
+                              },
                         child: _saving
                             ? const SizedBox(
                                 height: 18,

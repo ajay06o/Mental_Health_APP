@@ -3,6 +3,8 @@
 # =====================================================
 import os
 import sys
+import logging
+from contextlib import asynccontextmanager
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(BASE_DIR)
@@ -13,9 +15,10 @@ if PROJECT_ROOT not in sys.path:
 # =====================================================
 # IMPORTS
 # =====================================================
-from fastapi import FastAPI, Depends, HTTPException, status, Request
+from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.responses import JSONResponse
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -26,8 +29,10 @@ from schemas import (
     UserCreate,
     TokenResponse,
     EmotionCreate,
+    EmotionResponse,
     RefreshTokenRequest,
     ProfileUpdate,
+    ProfileResponse,
 )
 from security import (
     hash_password,
@@ -41,29 +46,81 @@ from security import (
 from ai_models.mental_health_model import final_prediction
 import models
 
+# Routes
+from routes.social import router as social_router
+
+# Scheduler
+from scheduler import start_scheduler
+
+
+# =====================================================
+# LOGGER SETUP
+# =====================================================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger("mental_health_api")
+
+
 # =====================================================
 # DATABASE INIT
 # =====================================================
 models.Base.metadata.create_all(bind=engine)
+
+
+# =====================================================
+# LIFESPAN EVENTS
+# =====================================================
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("🚀 Starting Mental Health API")
+
+    # Prevent double scheduler in reload mode
+    if not os.getenv("RUN_MAIN") or os.getenv("RUN_MAIN") == "true":
+        start_scheduler()
+        logger.info("⏰ Scheduler started")
+
+    yield
+
+    logger.info("🛑 Shutting down Mental Health API")
+
 
 # =====================================================
 # FASTAPI APP
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="1.2.0",
+    version="5.0.0",
+    lifespan=lifespan,
 )
 
+app.include_router(social_router)
+
+
 # =====================================================
-# CORS (FLUTTER SAFE)
+# CORS
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Restrict in production
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# =====================================================
+# GLOBAL ERROR HANDLER
+# =====================================================
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    logger.error(f"Unhandled error: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
+
 
 # =====================================================
 # HEALTH
@@ -72,9 +129,11 @@ app.add_middleware(
 def root():
     return {"status": "OK", "message": "Backend running 🚀"}
 
+
 @app.get("/health")
 def health():
     return {"status": "healthy"}
+
 
 # =====================================================
 # DB DEPENDENCY
@@ -86,39 +145,27 @@ def get_db():
     finally:
         db.close()
 
+
 # =====================================================
 # AUTH DEPENDENCY
 # =====================================================
-oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl="/login",
-    auto_error=False,
-)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
+
 
 def get_current_user(
-    request: Request,
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    # ✅ Allow CORS preflight safely
-    if request.method == "OPTIONS":
-        raise HTTPException(status_code=204)
-
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-        )
-
     email = verify_access_token(token)
+
     if not email:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
         )
 
-    email = email.strip().lower()
-
     user = db.query(User).filter(User.email == email).first()
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -127,8 +174,26 @@ def get_current_user(
 
     return user
 
+
 # =====================================================
-# REGISTER (PUBLIC)
+# SEVERITY CALCULATION
+# =====================================================
+def calculate_severity(emotion: str, confidence: float) -> int:
+    emotion = emotion.lower()
+
+    if emotion == "suicidal":
+        return 5
+    if confidence >= 0.8:
+        return 4
+    if confidence >= 0.6:
+        return 3
+    if confidence >= 0.4:
+        return 2
+    return 1
+
+
+# =====================================================
+# REGISTER
 # =====================================================
 @app.post("/register", status_code=201)
 def register(user: UserCreate, db: Session = Depends(get_db)):
@@ -140,18 +205,20 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
             detail="Email already registered",
         )
 
-    new_user = User(
-        email=email,
-        password=hash_password(user.password),
+    db.add(
+        User(
+            email=email,
+            password=hash_password(user.password),
+        )
     )
-
-    db.add(new_user)
     db.commit()
 
+    logger.info(f"User registered: {email}")
     return {"message": "User registered successfully"}
 
+
 # =====================================================
-# LOGIN (PUBLIC – OAUTH2)
+# LOGIN
 # =====================================================
 @app.post("/login", response_model=TokenResponse)
 def login(
@@ -168,25 +235,27 @@ def login(
             detail="Invalid credentials",
         )
 
+    logger.info(f"User login: {email}")
+
     return {
         "access_token": create_access_token({"sub": user.email}),
         "refresh_token": create_refresh_token({"sub": user.email}),
         "token_type": "bearer",
     }
 
+
 # =====================================================
-# REFRESH TOKEN (PUBLIC)
+# REFRESH TOKEN
 # =====================================================
 @app.post("/refresh", response_model=TokenResponse)
 def refresh(payload: RefreshTokenRequest):
     email = verify_refresh_token(payload.refresh_token)
+
     if not email:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid refresh token",
         )
-
-    email = email.strip().lower()
 
     return {
         "access_token": create_access_token({"sub": email}),
@@ -194,10 +263,11 @@ def refresh(payload: RefreshTokenRequest):
         "token_type": "bearer",
     }
 
+
 # =====================================================
-# 🧠 PREDICT (PROTECTED)
+# PREDICT
 # =====================================================
-@app.post("/predict")
+@app.post("/predict", response_model=EmotionResponse)
 def predict(
     data: EmotionCreate,
     user: User = Depends(get_current_user),
@@ -205,36 +275,32 @@ def predict(
 ):
     result = final_prediction(data.text)
 
-    emotion = (
-        result.get("final_mental_state")
-        or result.get("emotion")
-        or "neutral"
-    ).lower()
-
-    confidence = float(result.get("confidence", 0.5))
+    emotion = result["final_mental_state"].lower()
+    confidence = float(result["confidence"])
+    severity = calculate_severity(emotion, confidence)
 
     record = EmotionHistory(
         user_id=user.id,
-        text=data.text,
+        platform="manual",
+        text=None,
         emotion=emotion,
         confidence=confidence,
-        severity=1,
+        severity=severity,
     )
 
     db.add(record)
     db.commit()
     db.refresh(record)
 
-    return {
-        "emotion": record.emotion,
-        "confidence": record.confidence,
-        "timestamp": record.timestamp.isoformat(),
-    }
+    logger.info(f"Prediction stored for user {user.id}")
+
+    return record
+
 
 # =====================================================
-# HISTORY (PROTECTED)
+# HISTORY
 # =====================================================
-@app.get("/history")
+@app.get("/history", response_model=list[EmotionResponse])
 def history(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -246,20 +312,13 @@ def history(
         .all()
     )
 
-    return [
-        {
-            "emotion": r.emotion,
-            "confidence": r.confidence,
-            "severity": r.severity,
-            "timestamp": r.timestamp.isoformat(),
-        }
-        for r in records
-    ]
+    return records
+
 
 # =====================================================
-# PROFILE (PROTECTED)
+# PROFILE
 # =====================================================
-@app.get("/profile")
+@app.get("/profile", response_model=ProfileResponse)
 def profile(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -271,13 +330,29 @@ def profile(
         or 0
     )
 
-    return {
-        "email": user.email,
-        "total_entries": int(total_entries),
-    }
+    avg_severity = (
+        db.query(func.avg(EmotionHistory.severity))
+        .filter(EmotionHistory.user_id == user.id)
+        .scalar()
+        or 0
+    )
+
+    high_risk = avg_severity >= 3.5
+
+    return ProfileResponse(
+        user_id=user.id,
+        email=user.email,
+        total_entries=int(total_entries),
+        avg_severity=round(float(avg_severity), 2),
+        high_risk=high_risk,
+        emergency_email=user.emergency_email,
+        emergency_name=user.emergency_name,
+        alerts_enabled=user.alerts_enabled,
+    )
+
 
 # =====================================================
-# UPDATE PROFILE (PROTECTED)
+# UPDATE PROFILE
 # =====================================================
 @app.put("/profile")
 def update_profile(
@@ -286,10 +361,21 @@ def update_profile(
     db: Session = Depends(get_db),
 ):
     if payload.email:
-        user.email = payload.email.strip().lower()
+        user.email = payload.email
 
     if payload.password:
         user.password = hash_password(payload.password)
 
+    if payload.emergency_email:
+        user.emergency_email = payload.emergency_email
+
+    if payload.emergency_name:
+        user.emergency_name = payload.emergency_name
+
+    if payload.alerts_enabled is not None:
+        user.alerts_enabled = payload.alerts_enabled
+
     db.commit()
+
+    logger.info(f"Profile updated for user {user.id}")
     return {"message": "Profile updated successfully"}

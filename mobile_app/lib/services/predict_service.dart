@@ -12,6 +12,7 @@ class PredictService {
       return {
         "emotion": "neutral",
         "confidence": 0.0,
+        "severity": 1,
         "timestamp": DateTime.now().toIso8601String(),
       };
     }
@@ -27,46 +28,42 @@ class PredictService {
         {"text": text},
       );
 
-      // ✅ SUCCESS
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
 
         return {
           "emotion": decoded["emotion"] ?? "neutral",
-          "confidence":
-              (decoded["confidence"] is num)
-                  ? (decoded["confidence"] as num).toDouble()
-                  : 0.5,
+          "confidence": (decoded["confidence"] is num)
+              ? (decoded["confidence"] as num).toDouble()
+              : 0.5,
+          "severity": decoded["severity"] ?? 1,
           "timestamp":
-              decoded["timestamp"] ??
-              DateTime.now().toIso8601String(),
+              decoded["timestamp"] ?? DateTime.now().toIso8601String(),
         };
       }
 
-      // 🔐 SESSION EXPIRED
       if (response.statusCode == 401) {
         await AuthService.logout();
         throw Exception("Session expired. Please login again.");
       }
 
-      // ⚠️ ANY OTHER ERROR → SAFE FALLBACK
-      return {
-        "emotion": "neutral",
-        "confidence": 0.3,
-        "timestamp": DateTime.now().toIso8601String(),
-      };
+      return _safePredictFallback();
     } catch (_) {
-      // 🔥 NEVER CRASH UI
-      return {
-        "emotion": "neutral",
-        "confidence": 0.3,
-        "timestamp": DateTime.now().toIso8601String(),
-      };
+      return _safePredictFallback();
     }
   }
 
+  static Map<String, dynamic> _safePredictFallback() {
+    return {
+      "emotion": "neutral",
+      "confidence": 0.3,
+      "severity": 1,
+      "timestamp": DateTime.now().toIso8601String(),
+    };
+  }
+
   // ==============================
-  // 📜 FETCH HISTORY (SAFE)
+  // 📜 FETCH HISTORY
   // ==============================
   static Future<List<Map<String, dynamic>>> fetchHistory() async {
     try {
@@ -79,7 +76,6 @@ class PredictService {
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
-
         if (decoded is List) {
           return decoded.cast<Map<String, dynamic>>();
         }
@@ -96,11 +92,10 @@ class PredictService {
   }
 
   // ==============================
-  // 🧠 AI SEMANTIC SEARCH (OPTIONAL)
+  // 🔎 SEMANTIC SEARCH (OPTIONAL)
   // ==============================
   static Future<List<Map<String, dynamic>>> semanticSearch(
-    String query,
-  ) async {
+      String query) async {
     if (query.trim().isEmpty) return [];
 
     try {
@@ -121,13 +116,12 @@ class PredictService {
 
       return [];
     } catch (_) {
-      // 🔥 Do not crash UI
       return [];
     }
   }
 
   // ==============================
-  // 👤 FETCH PROFILE (SAFE)
+  // 👤 FETCH PROFILE
   // ==============================
   static Future<Map<String, dynamic>> fetchProfile() async {
     try {
@@ -156,11 +150,14 @@ class PredictService {
   }
 
   // ==============================
-  // ✏️ UPDATE PROFILE (SAFE)
+  // ✏️ UPDATE PROFILE (FULL SUPPORT)
   // ==============================
   static Future<bool> updateProfile({
     required String email,
     String? password,
+    String? emergencyName,
+    String? emergencyEmail,
+    bool? alertsEnabled,
   }) async {
     try {
       final token = await AuthService.getAccessToken();
@@ -168,12 +165,24 @@ class PredictService {
         throw Exception("User not authenticated");
       }
 
-      final body = <String, dynamic>{
+      final Map<String, dynamic> body = {
         "email": email,
       };
 
       if (password != null && password.isNotEmpty) {
         body["password"] = password;
+      }
+
+      if (emergencyName != null) {
+        body["emergency_name"] = emergencyName;
+      }
+
+      if (emergencyEmail != null) {
+        body["emergency_email"] = emergencyEmail;
+      }
+
+      if (alertsEnabled != null) {
+        body["alerts_enabled"] = alertsEnabled;
       }
 
       final response = await ApiClient.put("/profile", body);
@@ -184,11 +193,12 @@ class PredictService {
 
       if (response.statusCode == 401) {
         await AuthService.logout();
+        throw Exception("Session expired. Please login again.");
       }
 
-      return false;
-    } catch (_) {
-      return false;
+      throw Exception("Failed to update profile");
+    } catch (e) {
+      throw Exception(e.toString());
     }
   }
 }

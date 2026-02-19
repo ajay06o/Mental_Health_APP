@@ -22,11 +22,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   final PageStorageBucket _bucket = PageStorageBucket();
 
-  final List<Widget> _screens = const [
-    HomeScreen(key: PageStorageKey("home_scroll")),
-    HistoryScreen(key: PageStorageKey("history_scroll")),
-    InsightsScreen(key: PageStorageKey("insights_scroll")),
-    ProfileScreen(key: PageStorageKey("profile_scroll")),
+  // ❌ DO NOT use const here
+  final List<Widget> _screens = [
+    const HomeScreen(key: PageStorageKey("home_scroll")),
+    const HistoryScreen(key: PageStorageKey("history_scroll")),
+    const InsightsScreen(key: PageStorageKey("insights_scroll")),
+    const ProfileScreen(key: PageStorageKey("profile_scroll")),
   ];
 
   @override
@@ -47,11 +48,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     if (savedIndex != null &&
         savedIndex >= 0 &&
         savedIndex < _screens.length) {
+      if (!mounted) return;
+
       setState(() {
         _currentIndex = savedIndex;
       });
     }
 
+    if (!mounted) return;
     setState(() => _isRestoring = false);
   }
 
@@ -81,7 +85,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 ),
         ),
       ),
-
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         type: BottomNavigationBarType.fixed,

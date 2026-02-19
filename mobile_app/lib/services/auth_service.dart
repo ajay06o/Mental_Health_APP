@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -6,13 +5,13 @@ import 'api_client.dart';
 
 class AuthService {
   // =========================
-  // TOKEN STORAGE
+  // TOKEN KEYS
   // =========================
   static const String _accessTokenKey = "access_token";
   static const String _refreshTokenKey = "refresh_token";
 
   // =========================
-  // SECURE STORAGE (CREDENTIALS)
+  // SECURE STORAGE
   // =========================
   static const FlutterSecureStorage _secureStorage =
       FlutterSecureStorage();
@@ -25,7 +24,7 @@ class AuthService {
   static bool _initialized = false;
 
   // =========================
-  // INIT (SAFE & IDEMPOTENT)
+  // INIT
   // =========================
   static Future<void> init() async {
     if (_initialized) return;
@@ -51,55 +50,37 @@ class AuthService {
     String password,
   ) async {
     try {
-      final response = await ApiClient.postPublic(
+      await ApiClient.postPublic(
         "/register",
         {
           "email": email.trim(),
           "password": password.trim(),
         },
       );
-
-      if (response.statusCode == 200 ||
-          response.statusCode == 201) {
-        return true;
-      }
-
-      print("REGISTER ERROR: ${response.body}");
-      return false;
-    } catch (e) {
-      print("REGISTER EXCEPTION: $e");
+      return true;
+    } catch (_) {
       return false;
     }
   }
 
   // =========================
-  // LOGIN (OAuth2 Form)
+  // LOGIN
   // =========================
   static Future<bool> login(
     String email,
     String password,
   ) async {
     try {
-      final response = await ApiClient.postForm(
+      final data = await ApiClient.postForm(
         "/login",
         {
-          // OAuth2 expects "username"
           "username": email.trim(),
           "password": password.trim(),
         },
       );
 
-      if (response.statusCode != 200) {
-        print("LOGIN ERROR: ${response.body}");
-        return false;
-      }
-
-      final Map<String, dynamic> data =
-          jsonDecode(response.body);
-
       return await _saveTokensFromResponse(data);
-    } catch (e) {
-      print("LOGIN EXCEPTION: $e");
+    } catch (_) {
       return false;
     }
   }
@@ -162,7 +143,7 @@ class AuthService {
   }
 
   // =========================
-  // SAVE TOKENS FROM LOGIN
+  // SAVE TOKENS
   // =========================
   static Future<bool> _saveTokensFromResponse(
     Map<String, dynamic> data,
@@ -172,7 +153,6 @@ class AuthService {
 
     if (accessToken == null ||
         JwtDecoder.isExpired(accessToken)) {
-      print("INVALID ACCESS TOKEN");
       return false;
     }
 
@@ -188,7 +168,7 @@ class AuthService {
   }
 
   // =================================================
-  // SAVE LOGIN CREDENTIALS (SECURE)
+  // SAVE LOGIN CREDENTIALS
   // =================================================
   static Future<void> saveLoginCredentials({
     required String email,
