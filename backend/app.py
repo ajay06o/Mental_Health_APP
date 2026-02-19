@@ -83,20 +83,23 @@ async def lifespan(app: FastAPI):
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="6.2.0",
+    version="7.0.0",
     lifespan=lifespan,
 )
 
 app.include_router(social_router)
 
 # =====================================================
-# CORS
+# ✅ PROPER CORS CONFIG (WEB + LOCAL + PROD)
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://mental-health-app-zpng.onrender.com",
         "https://mental-health-app-1-rv33.onrender.com",
+        "http://localhost:3000",
+        "http://localhost:5000",
+        "http://localhost:8080",
     ],
     allow_origin_regex=r"http://localhost:\d+",
     allow_credentials=True,
@@ -105,18 +108,18 @@ app.add_middleware(
 )
 
 # =====================================================
-# GLOBAL ERROR HANDLER
+# ✅ SHOW REAL ERROR (DEBUG SAFE)
 # =====================================================
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    logger.error(f"Unhandled error: {exc}")
+    logger.exception("🔥 Unhandled backend error")
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal server error"},
+        content={"detail": str(exc)},  # Shows real error
     )
 
 # =====================================================
-# HEALTH
+# HEALTH CHECK
 # =====================================================
 @app.get("/")
 def root():
@@ -154,7 +157,7 @@ def get_current_user(
     return user
 
 # =====================================================
-# SEVERITY LOGIC (IMPROVED)
+# SEVERITY LOGIC
 # =====================================================
 def calculate_severity(emotion: str, confidence: float) -> int:
     emotion = emotion.lower().strip()
@@ -188,12 +191,14 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
             detail="Email already registered",
         )
 
-    db.add(User(
+    new_user = User(
         email=email,
         password=hash_password(user.password),
-    ))
+    )
 
+    db.add(new_user)
     db.commit()
+
     logger.info(f"User registered: {email}")
 
     return {"message": "User registered successfully"}
@@ -244,7 +249,7 @@ def refresh(payload: RefreshTokenRequest):
     )
 
 # =====================================================
-# PREDICT (FULL DEBUG SAFE VERSION)
+# PREDICT
 # =====================================================
 @app.post("/predict", response_model=EmotionResponse)
 def predict(
@@ -260,29 +265,12 @@ def predict(
 
     logger.info(f"📝 INPUT: {data.text}")
 
-    try:
-        result = final_prediction(data.text)
-        logger.info(f"🧠 MODEL OUTPUT: {result}")
+    result = final_prediction(data.text)
+    logger.info(f"🧠 MODEL OUTPUT: {result}")
 
-        emotion_raw = result.get("final_mental_state", "Neutral")
-        confidence = float(result.get("confidence", 0.0))
-
-        emotion = emotion_raw.strip().lower()
-        if not emotion:
-            emotion = "neutral"
-
-        severity = calculate_severity(emotion, confidence)
-
-        logger.info(
-            f"✅ FINAL → emotion={emotion}, confidence={confidence}, severity={severity}"
-        )
-
-    except Exception as e:
-        logger.error(f"❌ Prediction failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Prediction failed",
-        )
+    emotion = result.get("final_mental_state", "neutral").strip().lower()
+    confidence = float(result.get("confidence", 0.0))
+    severity = calculate_severity(emotion, confidence)
 
     record = EmotionHistory(
         user_id=user.id,
@@ -359,26 +347,3 @@ def profile(
         emergency_name=user.emergency_name,
         alerts_enabled=user.alerts_enabled,
     )
-
-# =====================================================
-# UPDATE PROFILE
-# =====================================================
-@app.put("/profile")
-def update_profile(
-    payload: ProfileUpdate,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    if payload.email:
-        user.email = payload.email.strip().lower()
-
-    if payload.password:
-        user.password = hash_password(payload.password)
-
-    user.emergency_email = payload.emergency_email
-    user.emergency_name = payload.emergency_name
-    user.alerts_enabled = payload.alerts_enabled
-
-    db.commit()
-
-    return {"message": "Profile updated successfully"}

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; // ✅ IMPORTANT
 import 'package:workmanager/workmanager.dart';
 
 import 'router/app_router.dart';
@@ -8,7 +9,7 @@ import 'services/social_service.dart';
 import 'services/oauth_listener_service.dart';
 
 /// ==========================================
-/// 🔄 BACKGROUND SYNC CALLBACK
+/// 🔄 BACKGROUND SYNC CALLBACK (MOBILE ONLY)
 /// ==========================================
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
@@ -32,11 +33,13 @@ Future<void> main() async {
     // 🌐 Warm backend
     await ApiClient.warmUpServer();
 
-    // 🔄 Initialize WorkManager
-    await Workmanager().initialize(
-      callbackDispatcher,
-      isInDebugMode: false,
-    );
+    // 🔄 Initialize WorkManager (ONLY mobile)
+    if (!kIsWeb) {
+      await Workmanager().initialize(
+        callbackDispatcher,
+        isInDebugMode: false,
+      );
+    }
   } catch (e) {
     debugPrint("Startup error: $e");
   }
@@ -46,16 +49,17 @@ Future<void> main() async {
     appRouter.go("/login");
   };
 
-  // 🔗 FIXED: Provide BOTH callbacks
-  OAuthListenerService.startListening(
-    (platform) {
-      debugPrint("OAuth success from $platform");
-      // Optional: auto-trigger sync here
-    },
-    (platform, error) {
-      debugPrint("OAuth failed for $platform: $error");
-    },
-  );
+  // 🔗 OAuth Listener (ONLY mobile)
+  if (!kIsWeb) {
+    OAuthListenerService.startListening(
+      (platform) {
+        debugPrint("OAuth success from $platform");
+      },
+      (platform, error) {
+        debugPrint("OAuth failed for $platform: $error");
+      },
+    );
+  }
 
   runApp(const MentalHealthApp());
 }
