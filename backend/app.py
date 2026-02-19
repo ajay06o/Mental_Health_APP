@@ -65,14 +65,14 @@ logger = logging.getLogger("mental_health_api")
 models.Base.metadata.create_all(bind=engine)
 
 # =====================================================
-# LIFESPAN (SAFE FOR RENDER)
+# LIFESPAN
 # =====================================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 Starting Mental Health API")
 
-    # Prevent double scheduler
-    if os.environ.get("RENDER") == "true" or os.environ.get("RUN_MAIN") == "true":
+    # Start scheduler once
+    if os.environ.get("RENDER") == "true":
         start_scheduler()
         logger.info("⏰ Scheduler started")
 
@@ -85,21 +85,22 @@ async def lifespan(app: FastAPI):
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="6.0.0",
+    version="6.1.0",
     lifespan=lifespan,
 )
 
 app.include_router(social_router)
 
 # =====================================================
-# CORS (FIXED PROPERLY)
+# CORS (FINAL CORRECT VERSION)
 # =====================================================
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:64671")
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_URL],  # 🔐 NOT "*"
-    allow_credentials=True,       # Required for JWT
+    allow_origins=[
+        "https://mental-health-app-zpng.onrender.com",
+    ],
+    allow_origin_regex=r"http://localhost:\d+",
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -219,7 +220,7 @@ def login(
     )
 
 # =====================================================
-# REFRESH TOKEN
+# REFRESH
 # =====================================================
 @app.post("/refresh", response_model=TokenResponse)
 def refresh(payload: RefreshTokenRequest):
@@ -264,8 +265,6 @@ def predict(
     db.add(record)
     db.commit()
     db.refresh(record)
-
-    logger.info(f"Prediction stored for user {user.id}")
 
     return EmotionResponse(
         emotion=record.emotion,
@@ -351,5 +350,4 @@ def update_profile(
 
     db.commit()
 
-    logger.info(f"Profile updated for user {user.id}")
     return {"message": "Profile updated successfully"}
