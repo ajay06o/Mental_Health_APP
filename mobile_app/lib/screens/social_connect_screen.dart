@@ -1,488 +1,356 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
+import 'package:flutter/services.dart';
+import 'package:lottie/lottie.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-import '../services/predict_service.dart';
-import '../services/auth_service.dart';
+import '../services/social_service.dart';
+import '../services/oauth_listener_service.dart';
+import 'sync_logs_screen.dart';
 
-class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+class SocialConnectScreen extends StatefulWidget {
+  const SocialConnectScreen({super.key});
 
   @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
+  State<SocialConnectScreen> createState() =>
+      _SocialConnectScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen>
-    with SingleTickerProviderStateMixin {
-  late Future<Map<String, dynamic>> _profileFuture;
+class _SocialConnectScreenState extends State<SocialConnectScreen> {
+  late Future<Map<String, bool>> _connectionsFuture;
 
-  late AnimationController _controller;
-  late Animation<double> _fadeAnimation;
-
-  bool _saving = false;
+  final Set<String> _loadingPlatforms = {};
+  final Map<String, DateTime?> _lastSync = {};
+  final Map<String, String?> _syncError = {};
 
   @override
   void initState() {
     super.initState();
-    _profileFuture = PredictService.fetchProfile();
+    _connectionsFuture = SocialService.getConnections();
+    _loadPreferences();
 
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 500),
+    // ✅ FIXED: Provide BOTH success and error callbacks
+    OAuthListenerService.startListening(
+      (platform) {
+        _handleOAuthSuccess(platform);
+      },
+      (platform, error) {
+        _showError(platform, error ?? "OAuth failed");
+        setState(() => _loadingPlatforms.remove(platform));
+      },
     );
-
-    _fadeAnimation =
-        CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    OAuthListenerService.dispose();
     super.dispose();
   }
 
-  void _refreshProfile() {
+  // ==============================
+  // LOAD STORED DATA
+  // ==============================
+  Future<void> _loadPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    for (final p in ["instagram", "twitter", "facebook", "linkedin"]) {
+      final ts = prefs.getString("${p}_last_sync");
+      _lastSync[p] = ts != null ? DateTime.tryParse(ts) : null;
+    }
+
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _saveLastSync(String platform) async {
+    final prefs = await SharedPreferences.getInstance();
+    final now = DateTime.now();
+    await prefs.setString("${platform}_last_sync", now.toIso8601String());
+    _lastSync[platform] = now;
+  }
+
+  // ==============================
+  // OAUTH FLOW
+  // ==============================
+  Future<void> _connectPlatform(String platform) async {
+    HapticFeedback.mediumImpact();
+
+    setState(() => _loadingPlatforms.add(platform));
+
+    try {
+      final url = await SocialService.getOAuthUrl(platform);
+
+      final uri = Uri.parse(url);
+
+      if (!await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      )) {
+        throw Exception("Could not launch OAuth URL");
+      }
+    } catch (e) {
+      _showError(platform, e.toString());
+      setState(() => _loadingPlatforms.remove(platform));
+    }
+  }
+
+  Future<void> _handleOAuthSuccess(String platform) async {
+    if (!mounted) return;
+
+    await _showSuccessAnimation();
+
+    if (!mounted) return;
+
+    await _showSyncProgress(platform);
+
+    if (!mounted) return;
+
+    await _saveLastSync(platform);
+
+    _refresh();
+
+    if (mounted) {
+      setState(() => _loadingPlatforms.remove(platform));
+    }
+  }
+
+  // ==============================
+  // ERROR UI
+  // ==============================
+  void _showError(String platform, String message) {
+    setState(() => _syncError[platform] = message);
+  }
+
+  Future<void> _retrySync(String platform) async {
+    setState(() => _syncError[platform] = null);
+
+    try {
+      await SocialService.retrySync(platform);
+      await _showSyncProgress(platform);
+      await _saveLastSync(platform);
+    } catch (e) {
+      _showError(platform, e.toString());
+    }
+  }
+
+  // ==============================
+  // SYNC PROGRESS
+  // ==============================
+  Future<void> _showSyncProgress(String platform) async {
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _SyncDialog(platform: platform),
+    );
+  }
+
+  void _refresh() {
     setState(() {
-      _profileFuture = PredictService.fetchProfile();
+      _connectionsFuture = SocialService.getConnections();
     });
   }
 
+  // ==============================
+  // UI
+  // ==============================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Profile"),
+        title: const Text("Social Connections"),
         actions: [
           IconButton(
-            icon: const Icon(Icons.edit),
-            onPressed: () async {
-              final data = await _profileFuture;
-              if (!mounted) return;
-              _openEditProfileSheet(data);
+            icon: const Icon(Icons.history),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const SyncLogsScreen(),
+                ),
+              );
             },
           )
         ],
       ),
-      body: FutureBuilder<Map<String, dynamic>>(
-        future: _profileFuture,
+      body: FutureBuilder<Map<String, bool>>(
+        future: _connectionsFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          if (snapshot.connectionState ==
+              ConnectionState.waiting) {
             return const Center(
-              child: CircularProgressIndicator(strokeWidth: 2),
-            );
+                child: CircularProgressIndicator());
           }
-
-          if (snapshot.hasError) {
-            return Center(
-              child: Text(
-                snapshot.error.toString(),
-                textAlign: TextAlign.center,
-              ),
-            );
-          }
-
-          _controller.forward();
 
           final data = snapshot.data ?? {};
 
-          final email = data["email"] ?? "Unknown";
-          final totalEntries = data["total_entries"] ?? 0;
-          final avgSeverity =
-              (data["avg_severity"] ?? 0).toDouble();
-          final highRisk = data["high_risk"] == true;
-
-          final emergencyEmail =
-              data["emergency_email"] ?? "Not Set";
-          final emergencyName =
-              data["emergency_name"] ?? "Not Set";
-          final alertsEnabled =
-              data["alerts_enabled"] ?? true;
-
-          return FadeTransition(
-            opacity: _fadeAnimation,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  _profileHeader(email),
-                  const SizedBox(height: 20),
-
-                  _statCard("📊 Total Entries",
-                      totalEntries.toString()),
-                  _statCard("⚡ Avg Severity",
-                      avgSeverity.toStringAsFixed(1)),
-
-                  const SizedBox(height: 20),
-
-                  _emergencyCard(
-                      emergencyName, emergencyEmail, alertsEnabled),
-
-                  if (highRisk) _alertCard(),
-
-                  const SizedBox(height: 30),
-                  _logoutButton(),
-                ],
-              ),
-            ),
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              ...["instagram", "twitter", "facebook", "linkedin"]
+                  .map((p) => _platformCard(p, data[p] == true)),
+            ],
           );
         },
       ),
     );
   }
 
-  // =============================
-  // PROFILE HEADER
-  // =============================
-  Widget _profileHeader(String email) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        color: Colors.deepPurple.withOpacity(0.08),
-      ),
-      child: Row(
-        children: [
-          const CircleAvatar(
-            radius: 28,
-            child: Icon(Icons.person),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              email,
-              style: const TextStyle(
-                  fontWeight: FontWeight.bold, fontSize: 16),
+  Widget _platformCard(String platform, bool connected) {
+    final loading = _loadingPlatforms.contains(platform);
+    final error = _syncError[platform];
+    final lastSync = _lastSync[platform];
+
+    return Card(
+      elevation: 8,
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20)),
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(platform.toUpperCase(),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold)),
+                const Spacer(),
+                if (loading)
+                  const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  ElevatedButton(
+                    onPressed: connected
+                        ? null
+                        : () => _connectPlatform(platform),
+                    child:
+                        Text(connected ? "Connected" : "Connect"),
+                  ),
+              ],
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // =============================
-  // STAT CARD
-  // =============================
-  Widget _statCard(String title, String value) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Row(
-        mainAxisAlignment:
-            MainAxisAlignment.spaceBetween,
-        children: [
-          Text(title),
-          Text(value,
-              style: const TextStyle(
-                  fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
-
-  // =============================
-  // EMERGENCY CARD
-  // =============================
-  Widget _emergencyCard(
-      String name, String email, bool enabled) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        color: Colors.orange.withOpacity(0.08),
-        border: Border.all(
-            color: enabled
-                ? Colors.orange
-                : Colors.grey.shade300),
-      ),
-      child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
-        children: [
-          const Text(
-            "🚨 Emergency Contact",
-            style: TextStyle(
-                fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          Text("Name: $name"),
-          Text("Email: $email"),
-          Text(
-            "Alerts: ${enabled ? "Enabled" : "Disabled"}",
-            style: TextStyle(
-              color: enabled
-                  ? Colors.green
-                  : Colors.red,
-              fontWeight: FontWeight.bold,
+            const SizedBox(height: 8),
+            Text(
+              lastSync != null
+                  ? "Last Sync: $lastSync"
+                  : "Never synced",
+              style: const TextStyle(fontSize: 12),
             ),
-          ),
-        ],
+            if (error != null) ...[
+              const SizedBox(height: 10),
+              Text("Error: $error",
+                  style: const TextStyle(color: Colors.red)),
+              TextButton(
+                onPressed: () => _retrySync(platform),
+                child: const Text("Retry"),
+              )
+            ]
+          ],
+        ),
       ),
     );
   }
 
-  // =============================
-  // HIGH RISK ALERT
-  // =============================
-  Widget _alertCard() {
-    return Container(
-      margin: const EdgeInsets.only(top: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        color: Colors.red.withOpacity(0.12),
-      ),
-      child: const Row(
-        children: [
-          Text("🚨", style: TextStyle(fontSize: 22)),
-          SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              "High risk patterns detected. Consider professional support.",
-              style: TextStyle(
-                  fontWeight: FontWeight.bold),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Future<void> _showSuccessAnimation() async {
+    if (!mounted) return;
 
-  // =============================
-  // LOGOUT
-  // =============================
-  Widget _logoutButton() {
-    return SizedBox(
-      width: double.infinity,
-      child: OutlinedButton.icon(
-        icon: const Icon(Icons.logout),
-        label: const Text("Logout"),
-        onPressed: () => _confirmLogout(),
-      ),
-    );
-  }
-
-  Future<void> _confirmLogout() async {
-    final shouldLogout =
-        await showDialog<bool>(
+    await showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Confirm Logout"),
-        content: const Text(
-            "Are you sure you want to logout?"),
-        actions: [
-          TextButton(
-            onPressed: () =>
-                Navigator.pop(context, false),
-            child: const Text("Cancel"),
+      barrierDismissible: false,
+      builder: (_) => Dialog(
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Lottie.asset(
+                "assets/lottie/success.json",
+                height: 120,
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                "Connection Successful!",
+                style:
+                    TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () =>
-                Navigator.pop(context, true),
-            child: const Text("Logout"),
-          ),
-        ],
+        ),
       ),
     );
 
-    if (shouldLogout == true && mounted) {
-      final prefs =
-          await SharedPreferences.getInstance();
-      await prefs.remove("last_tab_index");
-      await AuthService.logout();
-      context.go("/login");
+    if (mounted) Navigator.pop(context);
+  }
+}
+
+// =================================
+// SYNC DIALOG WITH POLLING
+// =================================
+class _SyncDialog extends StatefulWidget {
+  final String platform;
+
+  const _SyncDialog({required this.platform});
+
+  @override
+  State<_SyncDialog> createState() => _SyncDialogState();
+}
+
+class _SyncDialogState extends State<_SyncDialog> {
+  int analyzed = 0;
+  int total = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _poll();
+  }
+
+  Future<void> _poll() async {
+    try {
+      final status =
+          await SocialService.getSyncStatus(widget.platform);
+
+      if (!mounted) return;
+
+      setState(() {
+        analyzed = status["analyzed"] ?? 0;
+        total = status["total"] ?? 1;
+      });
+
+      if (analyzed < total) {
+        Future.delayed(const Duration(seconds: 2), _poll);
+      } else {
+        Navigator.pop(context);
+      }
+    } catch (_) {
+      if (mounted) Navigator.pop(context);
     }
   }
 
-  // =============================
-  // EDIT PROFILE
-  // =============================
-  void _openEditProfileSheet(
-      Map<String, dynamic> data) {
-    final emailController =
-        TextEditingController(text: data["email"] ?? "");
-    final passwordController =
-        TextEditingController();
-    final emergencyNameController =
-        TextEditingController(
-            text: data["emergency_name"] ?? "");
-    final emergencyEmailController =
-        TextEditingController(
-            text: data["emergency_email"] ?? "");
+  @override
+  Widget build(BuildContext context) {
+    final progress = analyzed / total;
 
-    bool alertsEnabled =
-        data["alerts_enabled"] ?? true;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 16,
-                right: 16,
-                top: 20,
-                bottom:
-                    MediaQuery.of(context)
-                            .viewInsets
-                            .bottom +
-                        20,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  children: [
-                    const Text("Edit Profile",
-                        style: TextStyle(
-                            fontWeight:
-                                FontWeight.bold,
-                            fontSize: 18)),
-                    const SizedBox(height: 16),
-
-                    TextField(
-                      controller: emailController,
-                      decoration:
-                          const InputDecoration(
-                              labelText: "Email"),
-                    ),
-                    const SizedBox(height: 12),
-
-                    TextField(
-                      controller:
-                          passwordController,
-                      obscureText: true,
-                      decoration:
-                          const InputDecoration(
-                              labelText:
-                                  "New Password (optional)"),
-                    ),
-                    const SizedBox(height: 12),
-
-                    TextField(
-                      controller:
-                          emergencyNameController,
-                      decoration:
-                          const InputDecoration(
-                              labelText:
-                                  "Emergency Contact Name"),
-                    ),
-                    const SizedBox(height: 12),
-
-                    TextField(
-                      controller:
-                          emergencyEmailController,
-                      decoration:
-                          const InputDecoration(
-                              labelText:
-                                  "Emergency Contact Email"),
-                    ),
-                    const SizedBox(height: 12),
-
-                    SwitchListTile(
-                      title: const Text(
-                          "Enable Crisis Alerts"),
-                      value: alertsEnabled,
-                      onChanged: (value) {
-                        setModalState(() =>
-                            alertsEnabled = value);
-                      },
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: _saving
-                            ? null
-                            : () async {
-                                setState(() =>
-                                    _saving =
-                                        true);
-
-                                try {
-                                  await PredictService
-                                      .updateProfile(
-                                    email:
-                                        emailController
-                                            .text
-                                            .trim(),
-                                    password:
-                                        passwordController
-                                                .text
-                                                .trim()
-                                                .isEmpty
-                                            ? null
-                                            : passwordController
-                                                .text
-                                                .trim(),
-                                    emergencyName:
-                                        emergencyNameController
-                                            .text
-                                            .trim(),
-                                    emergencyEmail:
-                                        emergencyEmailController
-                                            .text
-                                            .trim(),
-                                    alertsEnabled:
-                                        alertsEnabled,
-                                  );
-
-                                  if (!mounted)
-                                    return;
-
-                                  Navigator.pop(
-                                      context);
-
-                                  _refreshProfile();
-
-                                  ScaffoldMessenger.of(
-                                          context)
-                                      .showSnackBar(
-                                    const SnackBar(
-                                        content: Text(
-                                            "Profile updated successfully")),
-                                  );
-                                } catch (e) {
-                                  ScaffoldMessenger.of(
-                                          context)
-                                      .showSnackBar(
-                                    SnackBar(
-                                        content: Text(
-                                            e.toString())),
-                                  );
-                                } finally {
-                                  setState(() =>
-                                      _saving =
-                                          false);
-                                }
-                              },
-                        child: _saving
-                            ? const SizedBox(
-                                height: 18,
-                                width: 18,
-                                child:
-                                    CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color:
-                                      Colors.white,
-                                ),
-                              )
-                            : const Text(
-                                "Save Changes"),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
+    return Dialog(
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("Syncing Posts..."),
+            const SizedBox(height: 20),
+            LinearProgressIndicator(value: progress),
+            const SizedBox(height: 10),
+            Text("$analyzed / $total posts analyzed"),
+          ],
+        ),
+      ),
     );
   }
 }

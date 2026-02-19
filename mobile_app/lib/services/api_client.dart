@@ -6,26 +6,43 @@ import 'auth_service.dart';
 
 class ApiClient {
   // =================================================
-  // 🌍 BACKEND
+  // 🌍 ENV CONFIG (DEV / PROD READY)
   // =================================================
-  static const String baseUrl =
-    "https://mental-health-app-zpng.onrender.com";
+  static const bool isProduction = true;
 
+  static const String _prodUrl =
+      "https://mental-health-app-zpng.onrender.com";
 
-  static const Duration _defaultTimeout = Duration(seconds: 60);
-  static const Duration _predictTimeout = Duration(seconds: 90);
+  static const String _devUrl =
+      "http://10.0.2.2:8000";
+
+  static String get baseUrl =>
+      isProduction ? _prodUrl : _devUrl;
+
+  static const Duration _defaultTimeout =
+      Duration(seconds: 60);
+
+  static const Duration _predictTimeout =
+      Duration(seconds: 120);
 
   static final http.Client _client = http.Client();
 
   static Future<String?>? _refreshFuture;
 
+  /// Global session expired callback (UI handles redirect)
+  static Function()? onSessionExpired;
+
   // =================================================
-  // 🔥 SERVER WARM UP
+  // 🔥 SERVER WARMUP
   // =================================================
   static Future<void> warmUpServer() async {
     try {
-      await _client.get(Uri.parse(baseUrl)).timeout(_defaultTimeout);
-    } catch (_) {}
+      await _client
+          .get(Uri.parse(baseUrl))
+          .timeout(_defaultTimeout);
+    } catch (_) {
+      // Ignore warmup failure
+    }
   }
 
   // =================================================
@@ -60,7 +77,7 @@ class ApiClient {
   }
 
   // =================================================
-  // 🛡 SAFE REQUEST
+  // 🛡 SAFE REQUEST (AUTO REFRESH)
   // =================================================
   static Future<http.Response> _safeRequest(
     Future<http.Response> Function() request, {
@@ -76,14 +93,15 @@ class ApiClient {
       }
 
       if (retrying) {
-        await AuthService.logout();
-        throw Exception("Session expired. Please login again.");
+        await _handleSessionExpired();
+        throw ApiException("Session expired. Please login again.");
       }
 
       final newToken = await _refreshTokenQueued();
+
       if (newToken == null) {
-        await AuthService.logout();
-        throw Exception("Session expired. Please login again.");
+        await _handleSessionExpired();
+        throw ApiException("Session expired. Please login again.");
       }
 
       return await _safeRequest(
@@ -92,17 +110,19 @@ class ApiClient {
         retrying: true,
       );
     } on TimeoutException {
-      throw Exception(
-          "Server is waking up. Please wait a moment.");
+      throw ApiException("Server is waking up. Please wait...");
     } on SocketException {
-      throw Exception("No internet connection.");
+      throw ApiException("No internet connection.");
     } on FormatException {
-      throw Exception("Invalid server response.");
+      throw ApiException("Invalid server response.");
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      throw ApiException("Unexpected error occurred.");
     }
   }
 
   // =================================================
-  // 🔁 REFRESH TOKEN
+  // 🔁 REFRESH TOKEN (QUEUED)
   // =================================================
   static Future<String?> _refreshTokenQueued() {
     _refreshFuture ??= _refreshToken();
@@ -126,9 +146,9 @@ class ApiClient {
           "Content-Type": "application/json",
           "Accept": "application/json",
         },
-        body: jsonEncode(
-          {"refresh_token": refreshToken},
-        ),
+        body: jsonEncode({
+          "refresh_token": refreshToken,
+        }),
       );
 
       if (response.statusCode != 200) return null;
@@ -148,27 +168,43 @@ class ApiClient {
   }
 
   // =================================================
-  // 🔄 RESPONSE PARSER
+  // 🔄 HANDLE SESSION EXPIRED
   // =================================================
-  static dynamic _parseResponse(http.Response response) {
-    if (response.body.isEmpty) return null;
-
-    final decoded = jsonDecode(response.body);
-
-    if (response.statusCode >= 200 &&
-        response.statusCode < 300) {
-      return decoded;
-    }
-
-    throw Exception(
-      decoded["detail"] ?? "Something went wrong",
-    );
+  static Future<void> _handleSessionExpired() async {
+    await AuthService.logout();
+    onSessionExpired?.call();
   }
 
   // =================================================
-  // 🌐 PUBLIC GET
+  // 🔄 RESPONSE PARSER
   // =================================================
-  static Future<dynamic> getPublic(String endpoint) async {
+  static dynamic _parseResponse(
+      http.Response response) {
+    if (response.body.isEmpty) return null;
+
+    try {
+      final decoded = jsonDecode(response.body);
+
+      if (response.statusCode >= 200 &&
+          response.statusCode < 300) {
+        return decoded;
+      }
+
+      throw ApiException(
+        decoded["detail"] ??
+            decoded["message"] ??
+            "Something went wrong",
+      );
+    } catch (_) {
+      throw ApiException("Invalid server response.");
+    }
+  }
+
+  // =================================================
+  // 🌐 PUBLIC METHODS
+  // =================================================
+  static Future<dynamic> getPublic(
+      String endpoint) async {
     final response = await _client.get(
       Uri.parse("$baseUrl$endpoint"),
       headers: await _headers(),
@@ -177,9 +213,6 @@ class ApiClient {
     return _parseResponse(response);
   }
 
-  // =================================================
-  // 🌐 PUBLIC POST
-  // =================================================
   static Future<dynamic> postPublic(
     String endpoint,
     Map<String, dynamic> body,
@@ -194,7 +227,26 @@ class ApiClient {
   }
 
   // =================================================
-  // 🔐 AUTH GET
+  // 🔑 FORM POST (FOR LOGIN)
+  // =================================================
+  static Future<dynamic> postForm(
+    String endpoint,
+    Map<String, String> body,
+  ) async {
+    final response = await _client.post(
+      Uri.parse("$baseUrl$endpoint"),
+      headers: await _headers(
+        json: false,
+        isForm: true,
+      ),
+      body: body,
+    );
+
+    return _parseResponse(response);
+  }
+
+  // =================================================
+  // 🔐 AUTH METHODS
   // =================================================
   static Future<dynamic> get(String endpoint) async {
     final response = await _safeRequest(() async {
@@ -207,9 +259,6 @@ class ApiClient {
     return _parseResponse(response);
   }
 
-  // =================================================
-  // 🔐 AUTH POST
-  // =================================================
   static Future<dynamic> post(
     String endpoint,
     Map<String, dynamic> body,
@@ -225,9 +274,6 @@ class ApiClient {
     return _parseResponse(response);
   }
 
-  // =================================================
-  // 🔐 AUTH PUT
-  // =================================================
   static Future<dynamic> put(
     String endpoint,
     Map<String, dynamic> body,
@@ -243,9 +289,6 @@ class ApiClient {
     return _parseResponse(response);
   }
 
-  // =================================================
-  // 🔐 AUTH DELETE (NEW)
-  // =================================================
   static Future<dynamic> delete(String endpoint) async {
     final response = await _safeRequest(() async {
       return _client.delete(
@@ -253,25 +296,6 @@ class ApiClient {
         headers: await _headers(withAuth: true),
       );
     });
-
-    return _parseResponse(response);
-  }
-
-  // =================================================
-  // 🔑 LOGIN FORM
-  // =================================================
-  static Future<dynamic> postForm(
-    String endpoint,
-    Map<String, String> body,
-  ) async {
-    final response = await _client.post(
-      Uri.parse("$baseUrl$endpoint"),
-      headers: await _headers(
-        json: false,
-        isForm: true,
-      ),
-      body: body,
-    );
 
     return _parseResponse(response);
   }
@@ -297,9 +321,21 @@ class ApiClient {
   }
 
   // =================================================
-  // CLEANUP
+  // 🧹 CLEANUP
   // =================================================
   static void dispose() {
     _client.close();
   }
+}
+
+// =================================================
+// 🚨 CUSTOM API EXCEPTION
+// =================================================
+class ApiException implements Exception {
+  final String message;
+
+  ApiException(this.message);
+
+  @override
+  String toString() => message;
 }

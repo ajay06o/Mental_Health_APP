@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'home_screen.dart';
@@ -14,7 +15,8 @@ class MainNavigationScreen extends StatefulWidget {
       _MainNavigationScreenState();
 }
 
-class _MainNavigationScreenState extends State<MainNavigationScreen> {
+class _MainNavigationScreenState extends State<MainNavigationScreen>
+    with SingleTickerProviderStateMixin {
   static const String _tabKey = "last_tab_index";
 
   int _currentIndex = 0;
@@ -22,12 +24,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   final PageStorageBucket _bucket = PageStorageBucket();
 
-  // ❌ DO NOT use const here
-  final List<Widget> _screens = [
-    const HomeScreen(key: PageStorageKey("home_scroll")),
-    const HistoryScreen(key: PageStorageKey("history_scroll")),
-    const InsightsScreen(key: PageStorageKey("insights_scroll")),
-    const ProfileScreen(key: PageStorageKey("profile_scroll")),
+  final List<Widget> _screens = const [
+    HomeScreen(key: PageStorageKey("home_scroll")),
+    HistoryScreen(key: PageStorageKey("history_scroll")),
+    InsightsScreen(key: PageStorageKey("insights_scroll")),
+    ProfileScreen(key: PageStorageKey("profile_scroll")),
   ];
 
   @override
@@ -37,22 +38,17 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 
   // ==============================
-  // RESTORE TAB INDEX
+  // RESTORE TAB
   // ==============================
   Future<void> _restoreLastTab() async {
     final prefs = await SharedPreferences.getInstance();
     final savedIndex = prefs.getInt(_tabKey);
 
-    await Future.delayed(const Duration(milliseconds: 150));
-
     if (savedIndex != null &&
         savedIndex >= 0 &&
         savedIndex < _screens.length) {
       if (!mounted) return;
-
-      setState(() {
-        _currentIndex = savedIndex;
-      });
+      _currentIndex = savedIndex;
     }
 
     if (!mounted) return;
@@ -60,11 +56,20 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 
   // ==============================
-  // SAVE TAB INDEX
+  // SAVE TAB
   // ==============================
   Future<void> _saveLastTab(int index) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_tabKey, index);
+  }
+
+  void _onTabSelected(int index) {
+    if (index == _currentIndex) return;
+
+    HapticFeedback.lightImpact();
+
+    setState(() => _currentIndex = index);
+    _saveLastTab(index);
   }
 
   @override
@@ -73,9 +78,21 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       body: PageStorage(
         bucket: _bucket,
         child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 350),
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeInCubic,
+          duration: const Duration(milliseconds: 300),
+          switchInCurve: Curves.easeOut,
+          switchOutCurve: Curves.easeIn,
+          transitionBuilder: (child, animation) {
+            return FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0.05, 0),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
+              ),
+            );
+          },
           child: _isRestoring
               ? const Center(child: CircularProgressIndicator())
               : IndexedStack(
@@ -85,28 +102,54 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 ),
         ),
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: Colors.indigo,
-        unselectedItemColor: Colors.grey,
-        onTap: (index) {
-          if (index == _currentIndex) return;
 
-          setState(() => _currentIndex = index);
-          _saveLastTab(index);
-        },
-        items: const [
-          BottomNavigationBarItem(
-              icon: Icon(Icons.home_rounded), label: "Home"),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.history_rounded), label: "History"),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.insights_rounded), label: "Insights"),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.person_rounded), label: "Profile"),
-        ],
+      // 🔥 Modern Bottom Navigation
+      bottomNavigationBar: Container(
+        decoration: const BoxDecoration(
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black12,
+              blurRadius: 12,
+            ),
+          ],
+        ),
+        child: BottomNavigationBar(
+          currentIndex: _currentIndex,
+          type: BottomNavigationBarType.fixed,
+          elevation: 10,
+          selectedItemColor: Colors.indigo,
+          unselectedItemColor: Colors.grey,
+          selectedLabelStyle:
+              const TextStyle(fontWeight: FontWeight.bold),
+          onTap: _onTabSelected,
+          items: [
+            _navItem(Icons.home_rounded, "Home", 0),
+            _navItem(Icons.history_rounded, "History", 1),
+            _navItem(Icons.insights_rounded, "Insights", 2),
+            _navItem(Icons.person_rounded, "Profile", 3),
+          ],
+        ),
       ),
+    );
+  }
+
+  BottomNavigationBarItem _navItem(
+      IconData icon, String label, int index) {
+    final isActive = _currentIndex == index;
+
+    return BottomNavigationBarItem(
+      icon: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        padding: const EdgeInsets.all(6),
+        decoration: isActive
+            ? BoxDecoration(
+                color: Colors.indigo.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(12),
+              )
+            : null,
+        child: Icon(icon),
+      ),
+      label: label,
     );
   }
 }

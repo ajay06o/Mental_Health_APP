@@ -9,10 +9,23 @@ import '../screens/register_screen.dart';
 import '../screens/main_navigation_screen.dart';
 import '../screens/settings_screen.dart';
 
+/// 🔁 Auth Change Notifier (Reactive Routing)
+class AuthNotifier extends ChangeNotifier {
+  void notify() => notifyListeners();
+}
+
+final AuthNotifier authNotifier = AuthNotifier();
+
+final GlobalKey<NavigatorState> rootNavigatorKey =
+    GlobalKey<NavigatorState>();
+
 final GoRouter appRouter = GoRouter(
+  navigatorKey: rootNavigatorKey,
   initialLocation: "/splash",
 
-  // ✅ SYNCHRONOUS AUTH GUARD (CORRECT WAY)
+  /// 🔄 This makes router reactive
+  refreshListenable: authNotifier,
+
   redirect: (context, state) {
     final location = state.matchedLocation;
 
@@ -42,46 +55,64 @@ final GoRouter appRouter = GoRouter(
     // ================= SPLASH =================
     GoRoute(
       path: "/splash",
-      pageBuilder: (context, state) => MaterialPage(
-        key: state.pageKey,
-        child: const SplashScreen(),
+      pageBuilder: (context, state) => _buildPage(
+        state,
+        const SplashScreen(),
       ),
     ),
 
     // ================= LOGIN =================
     GoRoute(
       path: "/login",
-      pageBuilder: (context, state) => MaterialPage(
-        key: state.pageKey,
-        child: const LoginScreen(),
+      pageBuilder: (context, state) => _buildPage(
+        state,
+        const LoginScreen(),
       ),
     ),
 
     // ================= REGISTER =================
     GoRoute(
       path: "/register",
-      pageBuilder: (context, state) => MaterialPage(
-        key: state.pageKey,
-        child: const RegisterScreen(),
+      pageBuilder: (context, state) => _buildPage(
+        state,
+        const RegisterScreen(),
       ),
     ),
 
     // ================= HOME =================
     GoRoute(
       path: "/home",
-      pageBuilder: (context, state) => MaterialPage(
-        key: state.pageKey,
-        child: const MainNavigationScreen(),
+      pageBuilder: (context, state) => _buildPage(
+        state,
+        const MainNavigationScreen(),
       ),
     ),
 
     // ================= SETTINGS =================
     GoRoute(
       path: "/settings",
-      pageBuilder: (context, state) => MaterialPage(
-        key: state.pageKey,
-        child: const SettingsScreen(),
+      pageBuilder: (context, state) => _buildPage(
+        state,
+        const SettingsScreen(),
       ),
     ),
   ],
 );
+
+/// 🔥 Smooth Fade Transition
+CustomTransitionPage _buildPage(
+  GoRouterState state,
+  Widget child,
+) {
+  return CustomTransitionPage(
+    key: state.pageKey,
+    child: child,
+    transitionsBuilder:
+        (context, animation, secondaryAnimation, child) {
+      return FadeTransition(
+        opacity: animation,
+        child: child,
+      );
+    },
+  );
+}

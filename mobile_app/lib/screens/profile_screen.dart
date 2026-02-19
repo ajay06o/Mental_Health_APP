@@ -9,30 +9,37 @@ class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
   @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
+  State<ProfileScreen> createState() =>
+      _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen>
+class _ProfileScreenState
+    extends State<ProfileScreen>
     with SingleTickerProviderStateMixin {
-  late Future<Map<String, dynamic>> _profileFuture;
+  late Future<Map<String, dynamic>>
+      _profileFuture;
 
   late AnimationController _controller;
-  late Animation<double> _fadeAnimation;
+  late Animation<double> _fade;
 
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
-    _profileFuture = PredictService.fetchProfile();
+    _profileFuture =
+        PredictService.fetchProfile();
 
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 400),
+      duration:
+          const Duration(milliseconds: 400),
     );
 
-    _fadeAnimation =
-        CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
+    _fade = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeInOut,
+    );
   }
 
   @override
@@ -43,85 +50,92 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   void _refreshProfile() {
     setState(() {
-      _profileFuture = PredictService.fetchProfile();
+      _profileFuture =
+          PredictService.fetchProfile();
     });
-  }
-
-  bool _isValidEmail(String email) {
-    final regex = RegExp(r"^[\w\.-]+@[\w\.-]+\.\w+$");
-    return regex.hasMatch(email);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Profile"),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit),
-            onPressed: () async {
-              final data = await _profileFuture;
-              if (!mounted) return;
-              _openEditProfileSheet(data);
-            },
-          )
-        ],
-      ),
-      body: FutureBuilder<Map<String, dynamic>>(
+      appBar:
+          AppBar(title: const Text("Profile")),
+      body: FutureBuilder<
+          Map<String, dynamic>>(
         future: _profileFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+          if (snapshot.connectionState ==
+              ConnectionState.waiting) {
+            return const Center(
+              child:
+                  CircularProgressIndicator(),
+            );
           }
 
           if (snapshot.hasError) {
             return Center(
               child: Text(
                 snapshot.error.toString(),
-                textAlign: TextAlign.center,
+                textAlign:
+                    TextAlign.center,
               ),
             );
           }
 
+          final data =
+              snapshot.data ?? {};
+
           _controller.forward();
 
-          final data = snapshot.data ?? {};
-
-          final email = data["email"] ?? "Unknown";
-          final totalEntries = data["total_entries"] ?? 0;
+          final email =
+              data["email"] ?? "Unknown";
+          final totalEntries =
+              data["total_entries"] ?? 0;
           final avgSeverity =
-              (data["avg_severity"] ?? 0).toDouble();
-          final highRisk = data["high_risk"] == true;
+              (data["avg_severity"] ?? 0)
+                  .toDouble();
+          final highRisk =
+              data["high_risk"] == true;
 
           final emergencyEmail =
-              data["emergency_email"] ?? "Not Set";
+              data["emergency_email"] ??
+                  "Not Set";
           final emergencyName =
-              data["emergency_name"] ?? "Not Set";
+              data["emergency_name"] ??
+                  "Not Set";
           final alertsEnabled =
-              data["alerts_enabled"] ?? true;
+              data["alerts_enabled"] ??
+                  true;
 
           return FadeTransition(
-            opacity: _fadeAnimation,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
+            opacity: _fade,
+            child:
+                SingleChildScrollView(
+              padding:
+                  const EdgeInsets.all(16),
               child: Column(
                 children: [
                   _profileHeader(email),
                   const SizedBox(height: 20),
-
-                  _statCard("📊 Total Entries",
-                      totalEntries.toString()),
-                  _statCard("⚡ Avg Severity",
-                      avgSeverity.toStringAsFixed(1)),
-
+                  _statCard(
+                      "Total Entries",
+                      totalEntries
+                          .toString(),
+                      Icons.list_alt),
+                  _statCard(
+                      "Avg Severity",
+                      avgSeverity
+                          .toStringAsFixed(
+                              1),
+                      Icons
+                          .analytics_outlined),
                   const SizedBox(height: 20),
-
                   _emergencyCard(
-                      emergencyName, emergencyEmail, alertsEnabled),
-
-                  if (highRisk) _alertCard(),
-
+                      emergencyName,
+                      emergencyEmail,
+                      alertsEnabled),
+                  if (highRisk)
+                    _alertCard(),
                   const SizedBox(height: 30),
                   _logoutButton(),
                 ],
@@ -134,286 +148,376 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   // =============================
-  // PROFILE HEADER
+  // HEADER
   // =============================
   Widget _profileHeader(String email) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding:
+          const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        color: Colors.deepPurple.withOpacity(0.08),
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFF6366F1),
+            Color(0xFF8B5CF6),
+          ],
+        ),
+        borderRadius:
+            BorderRadius.circular(20),
       ),
       child: Row(
         children: [
           const CircleAvatar(
-            radius: 28,
-            child: Icon(Icons.person),
+            radius: 30,
+            backgroundColor:
+                Colors.white,
+            child: Icon(Icons.person,
+                size: 32,
+                color: Colors
+                    .deepPurple),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 14),
           Expanded(
             child: Text(
               email,
-              style: const TextStyle(
-                  fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _statCard(String title, String value) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Row(
-        mainAxisAlignment:
-            MainAxisAlignment.spaceBetween,
-        children: [
-          Text(title),
-          Text(value,
-              style: const TextStyle(
-                  fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
-
-  Widget _emergencyCard(
-      String name, String email, bool enabled) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        color: Colors.orange.withOpacity(0.08),
-        border: Border.all(
-            color: enabled
-                ? Colors.orange
-                : Colors.grey.shade300),
-      ),
-      child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
-        children: [
-          const Text(
-            "🚨 Emergency Contact",
-            style:
-                TextStyle(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          Text("Name: $name"),
-          Text("Email: $email"),
-          Text(
-            "Alerts: ${enabled ? "Enabled" : "Disabled"}",
-            style: TextStyle(
-              color: enabled
-                  ? Colors.green
-                  : Colors.red,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _alertCard() {
-    return Container(
-      margin: const EdgeInsets.only(top: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        color: Colors.red.withOpacity(0.12),
-      ),
-      child: const Row(
-        children: [
-          Text("🚨", style: TextStyle(fontSize: 22)),
-          SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              "High risk patterns detected. Consider professional support.",
               style:
-                  TextStyle(fontWeight: FontWeight.bold),
+                  const TextStyle(
+                fontWeight:
+                    FontWeight.bold,
+                fontSize: 16,
+                color: Colors.white,
+              ),
             ),
           ),
+          IconButton(
+            icon: const Icon(
+                Icons.edit,
+                color:
+                    Colors.white),
+            onPressed: () async {
+              final data =
+                  await _profileFuture;
+              if (!mounted) return;
+              _openEditProfileSheet(
+                  data);
+            },
+          )
         ],
       ),
     );
   }
 
+  // =============================
+  // STAT CARD
+  // =============================
+  Widget _statCard(
+      String title,
+      String value,
+      IconData icon) {
+    return Card(
+      margin: const EdgeInsets.only(
+          bottom: 12),
+      shape:
+          RoundedRectangleBorder(
+        borderRadius:
+            BorderRadius.circular(16),
+      ),
+      child: ListTile(
+        leading: Icon(icon,
+            color:
+                Colors.deepPurple),
+        title: Text(title),
+        trailing: Text(
+          value,
+          style: const TextStyle(
+              fontWeight:
+                  FontWeight.bold),
+        ),
+      ),
+    );
+  }
+
+  // =============================
+  // EMERGENCY CARD
+  // =============================
+  Widget _emergencyCard(
+      String name,
+      String email,
+      bool enabled) {
+    return Card(
+      shape:
+          RoundedRectangleBorder(
+        borderRadius:
+            BorderRadius.circular(16),
+      ),
+      color:
+          Colors.orange.withOpacity(
+              0.08),
+      child: Padding(
+        padding:
+            const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment:
+              CrossAxisAlignment.start,
+          children: [
+            const Text(
+              "🚨 Emergency Contact",
+              style: TextStyle(
+                  fontWeight:
+                      FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text("Name: $name"),
+            Text("Email: $email"),
+            const SizedBox(height: 6),
+            Text(
+              enabled
+                  ? "Alerts Enabled"
+                  : "Alerts Disabled",
+              style: TextStyle(
+                color: enabled
+                    ? Colors.green
+                    : Colors.red,
+                fontWeight:
+                    FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // =============================
+  // ALERT
+  // =============================
+  Widget _alertCard() {
+    return Card(
+      margin:
+          const EdgeInsets.only(
+              top: 14),
+      color:
+          Colors.red.withOpacity(
+              0.1),
+      child: const Padding(
+        padding:
+            EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(Icons.warning,
+                color: Colors.red),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                "High risk patterns detected. Please consider professional support.",
+                style: TextStyle(
+                    fontWeight:
+                        FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // =============================
+  // LOGOUT
+  // =============================
   Widget _logoutButton() {
     return SizedBox(
       width: double.infinity,
-      child: OutlinedButton.icon(
-        icon: const Icon(Icons.logout),
-        label: const Text("Logout"),
-        onPressed: _confirmLogout,
+      child: ElevatedButton.icon(
+        icon:
+            const Icon(Icons.logout),
+        label:
+            const Text("Logout"),
+        style:
+            ElevatedButton.styleFrom(
+          backgroundColor:
+              Colors.red,
+        ),
+        onPressed:
+            _confirmLogout,
       ),
     );
   }
 
   Future<void> _confirmLogout() async {
-    final shouldLogout =
+    final result =
         await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Confirm Logout"),
-        content:
-            const Text("Are you sure you want to logout?"),
+      builder: (_) =>
+          AlertDialog(
+        title: const Text(
+            "Confirm Logout"),
+        content: const Text(
+            "Are you sure you want to logout?"),
         actions: [
           TextButton(
             onPressed: () =>
-                Navigator.pop(context, false),
-            child: const Text("Cancel"),
+                Navigator.pop(
+                    context,
+                    false),
+            child:
+                const Text("Cancel"),
           ),
           ElevatedButton(
             onPressed: () =>
-                Navigator.pop(context, true),
-            child: const Text("Logout"),
+                Navigator.pop(
+                    context,
+                    true),
+            child:
+                const Text("Logout"),
           ),
         ],
       ),
     );
 
-    if (shouldLogout == true && mounted) {
+    if (result == true &&
+        mounted) {
       final prefs =
-          await SharedPreferences.getInstance();
-      await prefs.remove("last_tab_index");
+          await SharedPreferences
+              .getInstance();
+      await prefs.remove(
+          "last_tab_index");
+
       await AuthService.logout();
-      if (!mounted) return;
+
       context.go("/login");
     }
   }
 
   // =============================
-  // EDIT PROFILE (FINAL CLEAN)
+  // EDIT PROFILE SHEET
   // =============================
   void _openEditProfileSheet(
       Map<String, dynamic> data) {
     final emailController =
-        TextEditingController(text: data["email"] ?? "");
+        TextEditingController(
+            text: data["email"] ??
+                "");
+
     final passwordController =
         TextEditingController();
+
     final emergencyNameController =
         TextEditingController(
-            text: data["emergency_name"] ?? "");
+            text: data[
+                    "emergency_name"] ??
+                "");
+
     final emergencyEmailController =
         TextEditingController(
-            text: data["emergency_email"] ?? "");
+            text: data[
+                    "emergency_email"] ??
+                "");
 
     bool alertsEnabled =
-        data["alerts_enabled"] ?? true;
+        data["alerts_enabled"] ??
+            true;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder: (_) {
         return StatefulBuilder(
-          builder: (context, setModalState) {
-            bool validEmail =
-                _isValidEmail(emailController.text);
-            bool validEmergency =
-                emergencyEmailController.text.isEmpty ||
-                    _isValidEmail(
-                        emergencyEmailController.text);
-
+          builder: (context,
+              setModalState) {
             return Padding(
-              padding: EdgeInsets.only(
+              padding:
+                  EdgeInsets.only(
                 left: 16,
                 right: 16,
                 top: 20,
                 bottom:
-                    MediaQuery.of(context)
+                    MediaQuery.of(
+                                context)
                             .viewInsets
                             .bottom +
                         20,
               ),
-              child: SingleChildScrollView(
+              child:
+                  SingleChildScrollView(
                 child: Column(
                   children: [
-                    const Text("Edit Profile",
-                        style: TextStyle(
-                            fontWeight:
-                                FontWeight.bold,
-                            fontSize: 18)),
-                    const SizedBox(height: 16),
-
-                    TextField(
-                      controller: emailController,
-                      decoration: InputDecoration(
-                        labelText: "Email",
-                        errorText: validEmail
-                            ? null
-                            : "Invalid email",
+                    const Text(
+                      "Edit Profile",
+                      style:
+                          TextStyle(
+                        fontWeight:
+                            FontWeight
+                                .bold,
+                        fontSize: 18,
                       ),
-                      onChanged: (_) =>
-                          setModalState(() {}),
                     ),
-
-                    const SizedBox(height: 12),
-
+                    const SizedBox(
+                        height: 16),
                     TextField(
                       controller:
-                          passwordController,
-                      obscureText: true,
+                          emailController,
                       decoration:
                           const InputDecoration(
                               labelText:
-                                  "New Password (optional)"),
+                                  "Email"),
                     ),
-
-                    const SizedBox(height: 12),
-
+                    const SizedBox(
+                        height: 12),
+                    TextField(
+                      controller:
+                          passwordController,
+                      obscureText:
+                          true,
+                      decoration:
+                          const InputDecoration(
+                        labelText:
+                            "New Password (optional)",
+                      ),
+                    ),
+                    const SizedBox(
+                        height: 12),
                     TextField(
                       controller:
                           emergencyNameController,
                       decoration:
                           const InputDecoration(
-                              labelText:
-                                  "Emergency Contact Name"),
+                        labelText:
+                            "Emergency Contact Name",
+                      ),
                     ),
-
-                    const SizedBox(height: 12),
-
+                    const SizedBox(
+                        height: 12),
                     TextField(
                       controller:
                           emergencyEmailController,
-                      decoration: InputDecoration(
+                      decoration:
+                          const InputDecoration(
                         labelText:
                             "Emergency Contact Email",
-                        errorText: validEmergency
-                            ? null
-                            : "Invalid email",
                       ),
-                      onChanged: (_) =>
-                          setModalState(() {}),
                     ),
-
-                    const SizedBox(height: 12),
-
+                    const SizedBox(
+                        height: 12),
                     SwitchListTile(
                       title: const Text(
                           "Enable Crisis Alerts"),
-                      value: alertsEnabled,
-                      onChanged: (value) {
+                      value:
+                          alertsEnabled,
+                      onChanged:
+                          (value) {
                         setModalState(() =>
-                            alertsEnabled = value);
+                            alertsEnabled =
+                                value);
                       },
                     ),
-
-                    const SizedBox(height: 20),
-
+                    const SizedBox(
+                        height: 20),
                     SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
+                      width:
+                          double.infinity,
+                      child:
+                          ElevatedButton(
                         onPressed:
-                            (!validEmail ||
-                                    !validEmergency ||
-                                    _saving)
+                            _saving
                                 ? null
                                 : () async {
                                     setState(() =>
@@ -427,15 +531,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                                             emailController
                                                 .text
                                                 .trim(),
-                                        password:
-                                            passwordController
-                                                    .text
-                                                    .trim()
-                                                    .isEmpty
-                                                ? null
-                                                : passwordController
-                                                    .text
-                                                    .trim(),
+                                        password: passwordController
+                                                .text
+                                                .trim()
+                                                .isEmpty
+                                            ? null
+                                            : passwordController
+                                                .text
+                                                .trim(),
                                         emergencyName:
                                             emergencyNameController
                                                 .text
@@ -456,31 +559,32 @@ class _ProfileScreenState extends State<ProfileScreen>
 
                                       _refreshProfile();
 
-                                      ScaffoldMessenger
-                                              .of(context)
+                                      ScaffoldMessenger.of(
+                                              context)
                                           .showSnackBar(
                                         const SnackBar(
                                             content: Text(
                                                 "Profile updated successfully")),
                                       );
+                                    } catch (e) {
+                                      ScaffoldMessenger.of(
+                                              context)
+                                          .showSnackBar(
+                                        SnackBar(
+                                            content: Text(
+                                                e.toString())),
+                                      );
                                     } finally {
-                                      if (mounted) {
-                                        setState(() =>
-                                            _saving =
-                                                false);
-                                      }
+                                      setState(() =>
+                                          _saving =
+                                              false);
                                     }
                                   },
                         child: _saving
-                            ? const SizedBox(
-                                height: 18,
-                                width: 18,
-                                child:
-                                    CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color:
-                                      Colors.white,
-                                ),
+                            ? const CircularProgressIndicator(
+                                color:
+                                    Colors
+                                        .white,
                               )
                             : const Text(
                                 "Save Changes"),

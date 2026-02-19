@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/predict_service.dart';
 
-/// ===============================
-/// EMOTION SYNONYMS (EN / TE / HI)
-/// ===============================
 const Map<String, List<String>> emotionSynonyms = {
   "happy": ["happy", "joy", "joyful", "సంతోషం", "खुशी"],
   "sad": ["sad", "unhappy", "విషాదం", "दुख"],
@@ -51,13 +49,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   // ===============================
-  // STATE RESTORE
+  // STATE
   // ===============================
   Future<void> _restoreState() async {
     final prefs = await SharedPreferences.getInstance();
-    _selectedEmotion = prefs.getString(_filterKey) ?? "all";
-    _searchText = prefs.getString(_searchKey) ?? "";
-    _searchController.text = _searchText;
+    setState(() {
+      _selectedEmotion = prefs.getString(_filterKey) ?? "all";
+      _searchText = prefs.getString(_searchKey) ?? "";
+      _searchController.text = _searchText;
+    });
   }
 
   Future<void> _persistState() async {
@@ -67,7 +67,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   // ===============================
-  // LOAD HISTORY (SAFE)
+  // LOAD HISTORY
   // ===============================
   Future<void> _loadHistory() async {
     setState(() => _loading = true);
@@ -85,18 +85,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
       setState(() => _loading = false);
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            e.toString().replaceAll("Exception:", "").trim(),
-          ),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text(e.toString())),
       );
     }
   }
 
   // ===============================
-  // KEYWORD SEARCH
+  // FILTER
   // ===============================
   List<Map<String, dynamic>> get filteredHistory {
     final keywords = _searchText.toLowerCase().split(RegExp(r'\s+'));
@@ -115,12 +110,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
       for (final k in keywords) {
         if (k.isNotEmpty && !searchable.contains(k)) return false;
       }
+
       return true;
     }).toList();
   }
 
   // ===============================
-  // 🧠 AI SEMANTIC SEARCH (OPTIONAL)
+  // SEMANTIC SEARCH
   // ===============================
   Future<void> _runSemanticSearch() async {
     if (_searchText.trim().isEmpty) return;
@@ -128,26 +124,42 @@ class _HistoryScreenState extends State<HistoryScreen> {
     setState(() => _semanticLoading = true);
 
     try {
-      // ⚠️ Semantic search may not exist
       final results = await PredictService.semanticSearch(_searchText);
-
       if (!mounted) return;
+
       setState(() {
         _semanticResults = results;
         _semanticLoading = false;
       });
     } catch (_) {
       if (!mounted) return;
+
       setState(() {
         _semanticResults = [];
         _semanticLoading = false;
       });
+    }
+  }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Semantic search not available"),
-        ),
-      );
+  // ===============================
+  // EMOTION COLOR
+  // ===============================
+  Color _emotionColor(String emotion) {
+    switch (emotion) {
+      case "happy":
+        return Colors.green;
+      case "sad":
+        return Colors.blue;
+      case "anxiety":
+        return Colors.orange;
+      case "angry":
+        return Colors.red;
+      case "depression":
+        return Colors.deepPurple;
+      case "suicidal":
+        return Colors.black87;
+      default:
+        return Colors.grey;
     }
   }
 
@@ -160,81 +172,130 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text("History")),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                TextField(
-                  controller: _searchController,
-                  decoration: const InputDecoration(
-                    hintText: "Search emotion, severity, meaning…",
-                    prefixIcon: Icon(Icons.search),
-                  ),
-                  onChanged: (v) {
-                    setState(() => _searchText = v);
-                    _persistState();
-                  },
-                  onSubmitted: (_) {
-                    if (_semanticMode) _runSemanticSearch();
-                  },
-                ),
-                SwitchListTile(
-                  title: const Text("AI Semantic Search"),
-                  subtitle: const Text("Search by meaning"),
-                  value: _semanticMode,
-                  onChanged: (v) {
-                    setState(() {
-                      _semanticMode = v;
-                      _semanticResults.clear();
-                    });
-                    if (v) _runSemanticSearch();
-                  },
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: (_loading || _semanticLoading)
-                ? const Center(child: CircularProgressIndicator())
-                : history.isEmpty
-                    ? const Center(child: Text("No records found"))
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: history.length,
-                        itemBuilder: (_, i) {
-                          final h = history[i];
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            child: ListTile(
-                              title: Text(
-                                h["emotion"].toString().toUpperCase(),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
+      body: RefreshIndicator(
+        onRefresh: _loadHistory,
+        child: Column(
+          children: [
+            _buildSearchSection(),
+            _buildEmotionChips(),
+            Expanded(
+              child: (_loading || _semanticLoading)
+                  ? const Center(child: CircularProgressIndicator())
+                  : history.isEmpty
+                      ? const Center(child: Text("No records found"))
+                      : ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: history.length,
+                          itemBuilder: (_, i) {
+                            final h = history[i];
+                            final emotion =
+                                h["emotion"].toString().toLowerCase();
+
+                            return Card(
+                              elevation: 6,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
                               ),
-                              subtitle: Text(
-                                "Confidence: ${(h["confidence"] * 100).toStringAsFixed(1)}%",
-                              ),
-                              trailing: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text("S${h["severity"]}"),
-                                  if (_semanticMode)
-                                    const Icon(
-                                      Icons.auto_awesome,
-                                      size: 14,
-                                      color: Colors.deepPurple,
+                              margin:
+                                  const EdgeInsets.only(bottom: 16),
+                              child: ListTile(
+                                contentPadding:
+                                    const EdgeInsets.all(16),
+                                title: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: _emotionColor(emotion)
+                                            .withOpacity(0.15),
+                                        borderRadius:
+                                            BorderRadius.circular(20),
+                                      ),
+                                      child: Text(
+                                        emotion.toUpperCase(),
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color:
+                                              _emotionColor(emotion),
+                                        ),
+                                      ),
                                     ),
-                                ],
+                                  ],
+                                ),
+                                subtitle: Padding(
+                                  padding:
+                                      const EdgeInsets.only(top: 8),
+                                  child: Text(
+                                    "Confidence: ${(h["confidence"] * 100).toStringAsFixed(1)}%  |  Severity: ${h["severity"]}",
+                                  ),
+                                ),
+                                trailing: _semanticMode
+                                    ? const Icon(
+                                        Icons.auto_awesome,
+                                        color: Colors.deepPurple,
+                                      )
+                                    : null,
                               ),
-                            ),
-                          );
-                        },
-                      ),
+                            );
+                          },
+                        ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchSection() {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          hintText: "Search emotion or meaning...",
+          prefixIcon: const Icon(Icons.search),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
           ),
-        ],
+        ),
+        onChanged: (v) {
+          setState(() => _searchText = v);
+          _persistState();
+        },
+        onSubmitted: (_) {
+          if (_semanticMode) _runSemanticSearch();
+        },
+      ),
+    );
+  }
+
+  Widget _buildEmotionChips() {
+    final emotions = ["all", ...emotionSynonyms.keys];
+
+    return SizedBox(
+      height: 50,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        itemCount: emotions.length,
+        itemBuilder: (_, i) {
+          final e = emotions[i];
+          final selected = _selectedEmotion == e;
+
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: ChoiceChip(
+              label: Text(e.toUpperCase()),
+              selected: selected,
+              onSelected: (_) {
+                HapticFeedback.selectionClick();
+                setState(() => _selectedEmotion = e);
+                _persistState();
+              },
+            ),
+          );
+        },
       ),
     );
   }

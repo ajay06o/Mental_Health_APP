@@ -5,9 +5,6 @@ import 'package:intl/intl.dart';
 import '../services/predict_service.dart';
 import '../widgets/app_logo.dart';
 
-/// ==============================
-/// LANGUAGE ENUM
-/// ==============================
 enum AppLanguage { english, telugu, hindi }
 
 class TrendPoint {
@@ -21,17 +18,25 @@ class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<HomeScreen> createState() =>
+      _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  final TextEditingController _controller = TextEditingController();
+class _HomeScreenState extends State<HomeScreen>
+    with TickerProviderStateMixin {
+  final TextEditingController _controller =
+      TextEditingController();
+
   final List<TrendPoint> _points = [];
 
   bool _loading = false;
   String? _currentEmotion;
-  AppLanguage _language = AppLanguage.english;
+  AppLanguage _language =
+      AppLanguage.english;
 
+  // ==============================
+  // INIT
+  // ==============================
   @override
   void initState() {
     super.initState();
@@ -48,9 +53,11 @@ class _HomeScreenState extends State<HomeScreen> {
   // AUTO LANGUAGE DETECT
   // ==============================
   void _autoDetectLanguage(String text) {
-    if (RegExp(r'[\u0C00-\u0C7F]').hasMatch(text)) {
+    if (RegExp(r'[\u0C00-\u0C7F]')
+        .hasMatch(text)) {
       _language = AppLanguage.telugu;
-    } else if (RegExp(r'[\u0900-\u097F]').hasMatch(text)) {
+    } else if (RegExp(r'[\u0900-\u097F]')
+        .hasMatch(text)) {
       _language = AppLanguage.hindi;
     } else {
       _language = AppLanguage.english;
@@ -62,22 +69,28 @@ class _HomeScreenState extends State<HomeScreen> {
   // ==============================
   Future<void> _loadHistory() async {
     try {
-      final data = await PredictService.fetchHistory();
+      final data =
+          await PredictService.fetchHistory();
+
       _points
         ..clear()
-        ..addAll(
-          data.map(
-            (e) => TrendPoint(
-              e["emotion"] ?? "unknown",
-              DateTime.tryParse(e["timestamp"] ?? "")?.toUtc() ??
-                  DateTime.now().toUtc(),
-            ),
+        ..addAll(data.map(
+          (e) => TrendPoint(
+            e["emotion"] ?? "unknown",
+            DateTime.tryParse(
+                        e["timestamp"] ?? "")
+                    ?.toUtc() ??
+                DateTime.now().toUtc(),
           ),
-        );
-      _points.sort((a, b) => a.time.compareTo(b.time));
+        ));
+
+      _points.sort(
+          (a, b) => a.time.compareTo(b.time));
+
       if (mounted) setState(() {});
     } catch (_) {
-      _showError("Failed to load history");
+      _showError(
+          "Failed to load history");
     }
   }
 
@@ -85,48 +98,90 @@ class _HomeScreenState extends State<HomeScreen> {
   // ANALYZE
   // ==============================
   Future<void> _analyze() async {
-    final text = _controller.text.trim();
-    if (text.isEmpty || _loading) return;
+    final text =
+        _controller.text.trim();
+    if (text.isEmpty ||
+        _loading) return;
 
     _autoDetectLanguage(text);
     setState(() => _loading = true);
 
     try {
-      final result = await PredictService.predictEmotion(text);
+      final result =
+          await PredictService
+              .predictEmotion(text);
+
+      final emotion =
+          result["emotion"] ??
+              "unknown";
 
       _points.add(
         TrendPoint(
-          result["emotion"] ?? "unknown",
-          DateTime.tryParse(result["timestamp"] ?? "")?.toUtc() ??
-              DateTime.now().toUtc(),
+          emotion,
+          DateTime.tryParse(
+                      result["timestamp"] ??
+                          "")
+                  ?.toUtc() ??
+              DateTime.now()
+                  .toUtc(),
         ),
       );
 
       if (!mounted) return;
 
       setState(() {
-        _currentEmotion = result["emotion"];
+        _currentEmotion = emotion;
         _controller.clear();
         _loading = false;
       });
+
+      _checkCrisis(emotion);
     } catch (_) {
       if (mounted) {
         setState(() => _loading = false);
-        _showError("Analysis failed. Please try again.");
+        _showError(
+            "Analysis failed. Please try again.");
       }
     }
   }
 
   // ==============================
-  // HELPERS
+  // CRISIS ALERT
   // ==============================
+  void _checkCrisis(String emotion) {
+    if (emotion.toLowerCase() ==
+        "suicidal") {
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text(
+              "🚨 Immediate Support"),
+          content: const Text(
+              "If you are feeling unsafe, please contact a trusted person or emergency service."),
+          actions: [
+            TextButton(
+              onPressed: () =>
+                  Navigator.pop(context),
+              child:
+                  const Text("Close"),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
   void _showError(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: Colors.red),
+    ScaffoldMessenger.of(context)
+        .showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: Colors.red,
+      ),
     );
   }
 
-  double _severityFromEmotion(String emotion) {
+  double _severity(String emotion) {
     switch (emotion.toLowerCase()) {
       case "happy":
         return 1;
@@ -135,8 +190,6 @@ class _HomeScreenState extends State<HomeScreen> {
       case "anxiety":
       case "stress":
         return 3;
-      case "angry":
-        return 3.5;
       case "depression":
         return 4;
       case "suicidal":
@@ -153,10 +206,7 @@ class _HomeScreenState extends State<HomeScreen> {
       case "sad":
         return "😔";
       case "anxiety":
-      case "stress":
         return "😰";
-      case "angry":
-        return "😡";
       case "depression":
         return "💔";
       case "suicidal":
@@ -166,74 +216,28 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  String _localizedEmotion(String emotion) {
-    final map = {
-      AppLanguage.telugu: {
-        "happy": "సంతోషం",
-        "sad": "విషాదం",
-        "anxiety": "ఆందోళన",
-        "stress": "ఆందోళన",
-        "angry": "కోపం",
-        "depression": "డిప్రెషన్",
-        "suicidal": "ఆత్మహత్య ఆలోచనలు",
-      },
-      AppLanguage.hindi: {
-        "happy": "खुशी",
-        "sad": "उदासी",
-        "anxiety": "चिंता",
-        "stress": "चिंता",
-        "angry": "गुस्सा",
-        "depression": "अवसाद",
-        "suicidal": "आत्महत्या के विचार",
-      },
-    };
-    return map[_language]?[emotion.toLowerCase()] ?? emotion;
-  }
-
-  DateTime _toIST(DateTime utc) =>
-      utc.add(const Duration(hours: 5, minutes: 30));
-
   // ==============================
-  // EMPTY STATE
-  // ==============================
-  Widget _emptyState() {
-    return Expanded(
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: const [
-            Icon(Icons.show_chart, size: 64, color: Colors.grey),
-            SizedBox(height: 12),
-            Text(
-              "No data yet",
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey,
-              ),
-            ),
-            SizedBox(height: 6),
-            Text(
-              "Start analyzing to see trends",
-              style: TextStyle(color: Colors.grey),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ==============================
-  // GRAPH (ENHANCED)
+  // GRAPH
   // ==============================
   Widget _graph() {
-    if (_points.length < 2) return _emptyState();
+    if (_points.length < 2) {
+      return const Expanded(
+        child: Center(
+          child: Text(
+            "No trend data yet",
+            style:
+                TextStyle(color: Colors.grey),
+          ),
+        ),
+      );
+    }
 
     final spots = List.generate(
       _points.length,
       (i) => FlSpot(
         i.toDouble(),
-        _severityFromEmotion(_points[i].emotion),
+        _severity(
+            _points[i].emotion),
       ),
     );
 
@@ -242,103 +246,27 @@ class _HomeScreenState extends State<HomeScreen> {
         LineChartData(
           minY: 0.8,
           maxY: 5.2,
-
           gridData: FlGridData(
             show: true,
             horizontalInterval: 1,
-            drawVerticalLine: false,
-            getDrawingHorizontalLine: (_) => FlLine(
-              color: Colors.grey.withOpacity(0.15),
-              dashArray: [6, 6],
-            ),
           ),
-
-          titlesData: FlTitlesData(
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                interval: 1,
-                reservedSize: 42,
-                getTitlesWidget: (value, _) {
-                  const map = {
-                    1: "😊",
-                    2: "😔",
-                    3: "😰",
-                    4: "💔",
-                    5: "🚨",
-                  };
-                  return Center(
-                    child: Text(
-                      map[value.round()] ?? "",
-                      style: const TextStyle(fontSize: 18),
-                    ),
-                  );
-                },
-              ),
-            ),
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                interval: 1,
-                getTitlesWidget: (value, _) {
-                  final i = value.toInt();
-                  if (i < 0 || i >= _points.length) {
-                    return const SizedBox.shrink();
-                  }
-                  return Text("E${i + 1}");
-                },
-              ),
-            ),
-            topTitles:
-                AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles:
-                AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          ),
-
           lineBarsData: [
             LineChartBarData(
               spots: spots,
               isCurved: true,
               barWidth: 4,
-              gradient: const LinearGradient(
+              gradient:
+                  const LinearGradient(
                 colors: [
                   Color(0xFF8B5CF6),
                   Color(0xFF6366F1),
                 ],
               ),
-              dotData: FlDotData(
-                show: true,
-                getDotPainter: (_, __, ___, ____) =>
-                    FlDotCirclePainter(
-                  radius: 5,
-                  color: Colors.white,
-                  strokeWidth: 3,
-                  strokeColor: Colors.deepPurple,
-                ),
-              ),
             ),
           ],
-
-          lineTouchData: LineTouchData(
-            touchTooltipData: LineTouchTooltipData(
-              tooltipBgColor: Colors.black.withOpacity(0.85),
-              tooltipRoundedRadius: 16,
-              tooltipPadding: const EdgeInsets.all(12),
-              getTooltipItems: (touched) {
-                return touched.map((spot) {
-                  final p = _points[spot.spotIndex];
-                  return LineTooltipItem(
-                    "${_emoji(p.emotion)} ${_localizedEmotion(p.emotion)}\n"
-                    "${DateFormat('dd MMM, hh:mm a').format(_toIST(p.time))}",
-                    const TextStyle(color: Colors.white),
-                  );
-                }).toList();
-              },
-            ),
-          ),
         ),
-        duration: const Duration(milliseconds: 700),
-        curve: Curves.easeOutCubic,
+        duration:
+            const Duration(milliseconds: 700),
       ),
     );
   }
@@ -347,67 +275,128 @@ class _HomeScreenState extends State<HomeScreen> {
   // UI
   // ==============================
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+      BuildContext context) {
+    final isDark =
+        Theme.of(context).brightness ==
+            Brightness.dark;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Dashboard"),
+        title:
+            const Text("AI Dashboard"),
         actions: const [
           Padding(
-            padding: EdgeInsets.only(right: 12),
-            child: AppLogo(size: 28, color: Colors.white),
+            padding:
+                EdgeInsets.only(right: 12),
+            child:
+                AppLogo(size: 28),
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Card(
-              elevation: 6,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: TextField(
-                  controller: _controller,
-                  maxLines: 3,
-                  decoration: InputDecoration(
-                    hintText: _language == AppLanguage.telugu
-                        ? "మీ భావాలను పంచుకోండి..."
-                        : _language == AppLanguage.hindi
-                            ? "आप कैसा महसूस कर रहे हैं लिखें..."
-                            : "Share how you feel...",
-                    border: InputBorder.none,
-                  ),
-                ),
+      body: Stack(
+        children: [
+          Padding(
+            padding:
+                const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                _inputCard(),
+                const SizedBox(height: 12),
+                _analyzeButton(),
+                const SizedBox(height: 16),
+                if (_currentEmotion !=
+                    null)
+                  _emotionCard(),
+                const SizedBox(height: 16),
+                _graph(),
+              ],
+            ),
+          ),
+          if (_loading)
+            Container(
+              color: Colors.black
+                  .withOpacity(0.3),
+              child:
+                  const Center(
+                child:
+                    CircularProgressIndicator(),
               ),
             ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                onPressed: _loading ? null : _analyze,
-                child: _loading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text("Analyze"),
-              ),
-            ),
-            if (_currentEmotion != null) ...[
-              const SizedBox(height: 12),
-              Chip(
-                avatar: Text(_emoji(_currentEmotion!)),
-                label: Text(
-                  _localizedEmotion(_currentEmotion!),
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
-            const SizedBox(height: 12),
-            _graph(),
-          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _inputCard() {
+    return Card(
+      elevation: 6,
+      shape:
+          RoundedRectangleBorder(
+        borderRadius:
+            BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding:
+            const EdgeInsets.all(14),
+        child: TextField(
+          controller: _controller,
+          maxLines: 3,
+          decoration:
+              const InputDecoration(
+            hintText:
+                "Share how you feel...",
+            border:
+                InputBorder.none,
+          ),
         ),
+      ),
+    );
+  }
+
+  Widget _analyzeButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: ElevatedButton(
+        onPressed:
+            _loading ? null : _analyze,
+        child: const Text("Analyze"),
+      ),
+    );
+  }
+
+  Widget _emotionCard() {
+    return AnimatedContainer(
+      duration:
+          const Duration(milliseconds: 400),
+      padding:
+          const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.deepPurple
+            .withOpacity(0.1),
+        borderRadius:
+            BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Text(
+            _emoji(_currentEmotion!),
+            style:
+                const TextStyle(
+              fontSize: 28,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            _currentEmotion!,
+            style: const TextStyle(
+              fontWeight:
+                  FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+        ],
       ),
     );
   }

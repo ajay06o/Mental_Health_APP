@@ -1,16 +1,61 @@
 import 'package:flutter/material.dart';
+import 'package:workmanager/workmanager.dart';
+
 import 'router/app_router.dart';
 import 'services/auth_service.dart';
 import 'services/api_client.dart';
+import 'services/social_service.dart';
+import 'services/oauth_listener_service.dart';
 
-void main() async {
+/// ==========================================
+/// 🔄 BACKGROUND SYNC CALLBACK
+/// ==========================================
+void callbackDispatcher() {
+  Workmanager().executeTask((task, inputData) async {
+    try {
+      await SocialService.backgroundSync();
+      return Future.value(true);
+    } catch (e) {
+      debugPrint("Background sync error: $e");
+      return Future.value(false);
+    }
+  });
+}
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // ✅ Initialize authentication state
-  await AuthService.init();
+  try {
+    // 🔐 Initialize authentication
+    await AuthService.init();
 
-  // ✅ Warm up Render server (prevents first login timeout)
-  await ApiClient.warmUpServer();
+    // 🌐 Warm backend
+    await ApiClient.warmUpServer();
+
+    // 🔄 Initialize WorkManager
+    await Workmanager().initialize(
+      callbackDispatcher,
+      isInDebugMode: false,
+    );
+  } catch (e) {
+    debugPrint("Startup error: $e");
+  }
+
+  // 🔁 Global Session Expiry Handler
+  ApiClient.onSessionExpired = () {
+    appRouter.go("/login");
+  };
+
+  // 🔗 FIXED: Provide BOTH callbacks
+  OAuthListenerService.startListening(
+    (platform) {
+      debugPrint("OAuth success from $platform");
+      // Optional: auto-trigger sync here
+    },
+    (platform, error) {
+      debugPrint("OAuth failed for $platform: $error");
+    },
+  );
 
   runApp(const MentalHealthApp());
 }
@@ -21,13 +66,59 @@ class MentalHealthApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: "Mental Health App",
+      title: "Mental Health AI",
       debugShowCheckedModeBanner: false,
       routerConfig: appRouter,
+
+      // ======================================
+      // 🎨 LIGHT THEME
+      // ======================================
       theme: ThemeData(
-        primarySwatch: Colors.indigo,
         useMaterial3: true,
+        brightness: Brightness.light,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF6C63FF),
+          brightness: Brightness.light,
+        ),
+        scaffoldBackgroundColor: const Color(0xFFF8F9FF),
+        cardTheme: CardTheme(
+          elevation: 8,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+        ),
+        appBarTheme: const AppBarTheme(
+          elevation: 0,
+          centerTitle: true,
+        ),
+        snackBarTheme: const SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+        ),
       ),
+
+      // ======================================
+      // 🌙 DARK THEME
+      // ======================================
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.dark,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF6C63FF),
+          brightness: Brightness.dark,
+        ),
+        scaffoldBackgroundColor: const Color(0xFF121212),
+        cardTheme: CardTheme(
+          elevation: 6,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+        ),
+        snackBarTheme: const SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+        ),
+      ),
+
+      themeMode: ThemeMode.system,
     );
   }
 }

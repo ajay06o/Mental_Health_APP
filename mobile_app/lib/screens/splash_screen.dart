@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../services/auth_service.dart';
@@ -24,15 +25,18 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
 
+    // 🔥 Light vibration on app start
+    HapticFeedback.lightImpact();
+
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1600),
+      duration: const Duration(milliseconds: 1400),
     );
 
     _fadeAnimation =
         CurvedAnimation(parent: _controller, curve: Curves.easeIn);
 
-    _scaleAnimation = Tween<double>(begin: 0.92, end: 1.0).animate(
+    _scaleAnimation = Tween<double>(begin: 0.9, end: 1.0).animate(
       CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
     );
 
@@ -41,46 +45,50 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   // =================================================
-  // 🚀 APP STARTUP FLOW (SAFE & PRODUCTION READY)
+  // 🚀 SAFE APP STARTUP FLOW
   // =================================================
   Future<void> _bootstrap() async {
-    // Allow animation to complete smoothly
-    await Future.delayed(const Duration(milliseconds: 1800));
+    try {
+      await Future.delayed(const Duration(milliseconds: 1700));
 
-    // Initialize auth state
-    await AuthService.init();
+      await AuthService.init();
 
-    if (!mounted || _navigated) return;
+      if (!mounted || _navigated) return;
 
-    final loggedIn = await AuthService.isLoggedIn();
+      final loggedIn = await AuthService.isLoggedIn();
 
-    // 🔐 Not logged in → Login
-    if (!loggedIn) {
-      _navigate("/login");
-      return;
-    }
+      // 🔐 Not logged in → Login
+      if (!loggedIn) {
+        _navigate("/login");
+        return;
+      }
 
-    // 🔁 Logged in → check Remember Me
-    final rememberMeEnabled =
-        await AuthService.isRememberMeEnabled();
+      // 🔁 Logged in → check Remember Me
+      final rememberMeEnabled =
+          await AuthService.isRememberMeEnabled();
 
-    if (rememberMeEnabled) {
-      final canBiometric =
-          await BiometricService.canAuthenticate();
+      if (rememberMeEnabled) {
+        final canBiometric =
+            await BiometricService.canAuthenticate();
 
-      if (canBiometric) {
-        final authenticated =
-            await BiometricService.authenticate();
+        if (canBiometric) {
+          final authenticated =
+              await BiometricService.authenticate();
 
-        if (!authenticated) {
-          _navigate("/login");
-          return;
+          if (!authenticated) {
+            // ❌ Failed biometric → fallback login
+            _navigate("/login");
+            return;
+          }
         }
       }
-    }
 
-    // ✅ All checks passed → Home
-    _navigate("/home");
+      // ✅ All checks passed → Home
+      _navigate("/home");
+    } catch (e) {
+      // 🛡 If anything unexpected happens → Safe fallback
+      _navigate("/login");
+    }
   }
 
   void _navigate(String route) {
@@ -96,7 +104,7 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   // =================================================
-  // 🎨 UI
+  // 🎨 PREMIUM UI
   // =================================================
   @override
   Widget build(BuildContext context) {
@@ -106,8 +114,8 @@ class _SplashScreenState extends State<SplashScreen>
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              Color(0xFF6366F1), // Indigo
-              Color(0xFF8B5CF6), // Soft Purple
+              Color(0xFF6366F1),
+              Color(0xFF8B5CF6),
             ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -121,7 +129,6 @@ class _SplashScreenState extends State<SplashScreen>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: const [
-                  // ✅ CENTRALIZED BRAND LOGO
                   AppLogo(size: 96),
 
                   SizedBox(height: 24),
@@ -145,6 +152,19 @@ class _SplashScreenState extends State<SplashScreen>
                       color: Colors.white70,
                     ),
                   ),
+
+                  SizedBox(height: 30),
+
+                  // 🔥 Premium Loader
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3,
+                      valueColor:
+                          AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -154,4 +174,3 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 }
-
