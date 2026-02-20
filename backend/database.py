@@ -2,41 +2,55 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# ==============================
+# =====================================================
 # 🗄️ DATABASE URL
-# ==============================
-# - PostgreSQL on Render (production)
-# - SQLite locally (development fallback)
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "sqlite:///./mental_health.db",
-)
+# =====================================================
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-# ==============================
+# =====================================================
+# ⚠️ LOCAL FALLBACK (ONLY FOR DEVELOPMENT)
+# =====================================================
+if not DATABASE_URL:
+    print("⚠️ DATABASE_URL not set. Using local SQLite.")
+    DATABASE_URL = "sqlite:///./mental_health.db"
+
+# =====================================================
+# 🔒 FORCE SSL FOR POSTGRESQL (Render Requirement)
+# =====================================================
+if DATABASE_URL.startswith("postgresql"):
+    if "sslmode" not in DATABASE_URL:
+        if "?" in DATABASE_URL:
+            DATABASE_URL += "&sslmode=require"
+        else:
+            DATABASE_URL += "?sslmode=require"
+
+# =====================================================
 # ⚙️ ENGINE CONFIGURATION
-# ==============================
+# =====================================================
 connect_args = {}
 
-# SQLite requires special thread handling
 if DATABASE_URL.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
 
 engine = create_engine(
     DATABASE_URL,
     connect_args=connect_args,
-    pool_pre_ping=True,   # prevents stale DB connections
+    pool_pre_ping=True,      # prevents stale connections
+    pool_recycle=280,        # recycle before Render timeout
+    pool_size=5,
+    max_overflow=10,
 )
 
-# ==============================
+# =====================================================
 # 🔁 SESSION FACTORY
-# ==============================
+# =====================================================
 SessionLocal = sessionmaker(
+    bind=engine,
     autocommit=False,
     autoflush=False,
-    bind=engine,
 )
 
-# ==============================
+# =====================================================
 # 📦 BASE MODEL
-# ==============================
+# =====================================================
 Base = declarative_base()

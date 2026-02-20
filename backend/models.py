@@ -1,91 +1,81 @@
+# =====================================================
+# IMPORTS
+# =====================================================
 from sqlalchemy import (
     Column,
     Integer,
     String,
     Float,
     DateTime,
-    ForeignKey,
     Boolean,
-    UniqueConstraint,
+    ForeignKey,
+    Text,
 )
-from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 
 from database import Base
 
-from sqlalchemy import Boolean
 
-
-
-# ==============================
+# =====================================================
 # 👤 USER MODEL
-# ==============================
+# =====================================================
 class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
 
-    email = Column(String(255), unique=True, index=True, nullable=False)
-    password = Column(String(255), nullable=False)
+    # Email
+    email = Column(
+        String(255),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
 
+    # Hashed password
+    password = Column(
+        String(255),
+        nullable=False,
+    )
+
+    # Optional safety settings
+    emergency_email = Column(
+        String(255),
+        nullable=True,
+    )
+
+    emergency_name = Column(
+        String(255),
+        nullable=True,
+    )
+
+    alerts_enabled = Column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+
+    # Account created timestamp
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
     )
 
-    # 🔗 Relationships
+    # Relationship
     emotions = relationship(
         "EmotionHistory",
         back_populates="user",
-        cascade="all, delete-orphan"
-    )
-
-    social_accounts = relationship(
-        "SocialAccount",
-        back_populates="user",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        lazy="selectin",   # efficient loading
     )
 
 
-# ==============================
-# 🌐 SOCIAL ACCOUNT MODEL
-# ==============================
-class SocialAccount(Base):
-    __tablename__ = "social_accounts"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    user_id = Column(
-        Integer,
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-
-    platform = Column(String(50), nullable=False)
-
-    access_token = Column(String(500), nullable=False)
-
-    is_active = Column(Boolean, default=True, nullable=False)
-
-    connected_at = Column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-    )
-
-    # 🔒 Prevent duplicate platform per user
-    __table_args__ = (
-        UniqueConstraint("user_id", "platform", name="uq_user_platform"),
-    )
-
-    user = relationship("User", back_populates="social_accounts")
-
-
-# ==============================
+# =====================================================
 # 🧠 EMOTION HISTORY MODEL
-# ==============================
+# =====================================================
 class EmotionHistory(Base):
     __tablename__ = "emotion_history"
 
@@ -98,16 +88,35 @@ class EmotionHistory(Base):
         index=True,
     )
 
-    # 🔹 Track source
-    platform = Column(String(50), nullable=False, default="manual")
+    # Source platform
+    platform = Column(
+        String(50),
+        default="manual",
+        nullable=False,
+    )
 
-    # ❌ Removed raw text storage (privacy-first design)
+    # AI result
+    emotion = Column(
+        String(50),
+        nullable=False,
+    )
 
-    emotion = Column(String(50), nullable=False, index=True)
+    confidence = Column(
+        Float,
+        nullable=False,
+        default=0.0,
+    )
 
-    confidence = Column(Float, nullable=False)
+    severity = Column(
+        Integer,
+        nullable=False,
+        default=1,
+    )
 
-    severity = Column(Integer, nullable=False, index=True)
+    text = Column(
+        Text,
+        nullable=True,
+    )
 
     timestamp = Column(
         DateTime(timezone=True),
@@ -116,9 +125,8 @@ class EmotionHistory(Base):
         index=True,
     )
 
-    user = relationship("User", back_populates="emotions")
-
-    emergency_email = Column(String(255), nullable=True)
-    emergency_name = Column(String(100), nullable=True)
-    alerts_enabled = Column(Boolean, default=True)
-
+    # Relationship
+    user = relationship(
+        "User",
+        back_populates="emotions",
+    )
