@@ -29,10 +29,6 @@ from models import User, EmotionHistory
 from schemas import (
     UserCreate,
     TokenResponse,
-    EmotionCreate,
-    EmotionResponse,
-    RefreshTokenRequest,
-    ProfileResponse,
 )
 from security import (
     hash_password,
@@ -40,12 +36,9 @@ from security import (
     create_access_token,
     create_refresh_token,
     verify_access_token,
-    verify_refresh_token,
 )
 
-from ai_models.mental_health_model import final_prediction
 import models
-
 from routes.social import router as social_router
 from scheduler import start_scheduler
 
@@ -87,14 +80,11 @@ app = FastAPI(
 )
 
 # =====================================================
-# ✅ PRODUCTION SAFE CORS CONFIG
+# CORS CONFIG
 # =====================================================
 origins = [
-    # Production Frontend
     "https://mental-health-app-zpng.onrender.com",
     "https://mental-health-app-1-rv33.onrender.com",
-
-    # Localhost base domains
     "http://localhost",
     "http://127.0.0.1",
 ]
@@ -109,7 +99,7 @@ app.add_middleware(
 )
 
 # =====================================================
-# INCLUDE ROUTERS (AFTER CORS)
+# INCLUDE ROUTERS
 # =====================================================
 app.include_router(social_router)
 
@@ -163,28 +153,6 @@ def get_current_user(
     return user
 
 # =====================================================
-# SEVERITY LOGIC
-# =====================================================
-def calculate_severity(emotion: str, confidence: float) -> int:
-    emotion = emotion.lower().strip()
-
-    if emotion == "suicidal":
-        return 5
-    if emotion in ["depression", "angry", "anxiety"]:
-        return 4
-    if emotion == "sad":
-        return 3
-    if emotion == "happy":
-        return 1
-    if confidence >= 0.8:
-        return 4
-    if confidence >= 0.6:
-        return 3
-    if confidence >= 0.4:
-        return 2
-    return 1
-
-# =====================================================
 # REGISTER
 # =====================================================
 @app.post("/register", status_code=201)
@@ -230,7 +198,7 @@ def login(
 # =====================================================
 # PROFILE
 # =====================================================
-@app.get("/profile", response_model=ProfileResponse)
+@app.get("/profile")
 def profile(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -247,13 +215,35 @@ def profile(
         .scalar() or 0
     )
 
-    return ProfileResponse(
-        user_id=user.id,
-        email=user.email,
-        total_entries=int(total_entries),
-        avg_severity=round(float(avg_severity), 2),
-        high_risk=avg_severity >= 3.5,
-        emergency_email=user.emergency_email,
-        emergency_name=user.emergency_name,
-        alerts_enabled=user.alerts_enabled,
+    return {
+        "user_id": int(user.id),
+        "email": user.email,
+        "total_entries": int(total_entries),
+        "avg_severity": float(avg_severity or 0),
+        "high_risk": bool((avg_severity or 0) >= 3.5),
+    }
+
+# =====================================================
+# HISTORY (ADDED BACK — FIXES 404)
+# =====================================================
+@app.get("/history")
+def history(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    records = (
+        db.query(EmotionHistory)
+        .filter(EmotionHistory.user_id == user.id)
+        .order_by(EmotionHistory.timestamp.desc())
+        .all()
     )
+
+    return [
+        {
+            "emotion": r.emotion,
+            "confidence": r.confidence,
+            "severity": r.severity,
+            "timestamp": r.timestamp,
+        }
+        for r in records
+    ]
