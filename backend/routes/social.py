@@ -108,7 +108,22 @@ def list_accounts(request: Request, db: Session = Depends(get_db)):
 
 
 # =====================================================
-# 🔐 OAUTH URL
+# 📋 LIST CONNECTED PROVIDERS
+# =====================================================
+@router.get("/connected")
+def get_connected(request: Request, db: Session = Depends(get_db)):
+    """Return list of provider names that user has connected."""
+    user = _resolve_user_from_request(request, db)
+
+    accounts = db.query(SocialAccount).filter(
+        SocialAccount.user_id == user.id
+    ).all()
+
+    return [a.provider for a in accounts]
+
+
+# =====================================================
+# 🔐 OAUTH URL (WITH ERROR HANDLING)
 # =====================================================
 @router.get("/oauth-url/{provider}")
 def get_oauth_url(provider: str, request: Request, client_redirect: str = "myapp://oauth-success"):
@@ -130,16 +145,19 @@ def get_oauth_url(provider: str, request: Request, client_redirect: str = "myapp
     state_raw = f"{client_redirect}|{token}"
     state = base64.urlsafe_b64encode(state_raw.encode()).decode()
 
-    if provider == "instagram":
-        url = instagram.authorize_url(redirect_uri=callback_url, state=state)
-    elif provider == "facebook":
-        url = facebook.authorize_url(redirect_uri=callback_url, state=state)
-    elif provider == "x":
-        url = x_provider.authorize_url(redirect_uri=callback_url, state=state)
-    else:
-        raise HTTPException(status_code=400, detail="Unknown provider")
+    try:
+        if provider == "instagram":
+            url = instagram.authorize_url(redirect_uri=callback_url, state=state)
+        elif provider == "facebook":
+            url = facebook.authorize_url(redirect_uri=callback_url, state=state)
+        elif provider == "x":
+            url = x_provider.authorize_url(redirect_uri=callback_url, state=state)
+        else:
+            raise HTTPException(status_code=400, detail="Unknown provider")
 
-    return {"url": url}
+        return {"url": url}
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=f"Provider not configured: {str(e)}")
 
 
 # =====================================================
