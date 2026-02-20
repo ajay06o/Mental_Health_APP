@@ -19,7 +19,6 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.responses import JSONResponse
-
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -30,6 +29,7 @@ from schemas import (
     UserCreate,
     TokenResponse,
     EmotionCreate,
+    RefreshTokenRequest,
 )
 from security import (
     hash_password,
@@ -37,6 +37,7 @@ from security import (
     create_access_token,
     create_refresh_token,
     verify_access_token,
+    verify_refresh_token,
 )
 
 from ai_models.mental_health_model import final_prediction
@@ -53,10 +54,38 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 # FASTAPI APP
 # =====================================================
-app = FastAPI(title="Mental Health Detection API")
+app = FastAPI(
+    title="Mental Health Detection API",
+    version="8.0.0",
+)
 
 # =====================================================
-# CORS (FIXED PROPERLY)
+# ROOT (Fix 404 at /)
+# =====================================================
+@app.get("/")
+def root():
+    return {"status": "Backend Running 🚀"}
+
+# =====================================================
+# HEALTH CHECK
+# =====================================================
+@app.get("/health")
+def health():
+    return {"status": "healthy"}
+
+# =====================================================
+# GLOBAL ERROR HANDLER
+# =====================================================
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    logger.exception("Unhandled backend error")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error"},
+    )
+
+# =====================================================
+# CORS (Production Safe)
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
@@ -133,6 +162,22 @@ def login(
     )
 
 # =====================================================
+# REFRESH TOKEN
+# =====================================================
+@app.post("/refresh", response_model=TokenResponse)
+def refresh(payload: RefreshTokenRequest):
+    email = verify_refresh_token(payload.refresh_token)
+
+    if not email:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    return TokenResponse(
+        access_token=create_access_token({"sub": email}),
+        refresh_token=create_refresh_token({"sub": email}),
+        token_type="bearer",
+    )
+
+# =====================================================
 # PROFILE
 # =====================================================
 @app.get("/profile")
@@ -186,7 +231,7 @@ def history(
     ]
 
 # =====================================================
-# PREDICT (ADDED BACK — FIXES 404)
+# PREDICT
 # =====================================================
 @app.post("/predict")
 def predict(
@@ -202,12 +247,15 @@ def predict(
     emotion = result.get("final_mental_state", "neutral")
     confidence = float(result.get("confidence", 0.0))
 
+    # Simple severity logic
+    severity = 4 if confidence >= 0.8 else 3 if confidence >= 0.6 else 2
+
     record = EmotionHistory(
         user_id=user.id,
         platform="manual",
         emotion=emotion,
         confidence=confidence,
-        severity=1,
+        severity=severity,
     )
 
     db.add(record)
@@ -216,4 +264,5 @@ def predict(
     return {
         "emotion": emotion,
         "confidence": confidence,
+        "severity": severity,
     }
