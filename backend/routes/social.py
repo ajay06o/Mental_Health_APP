@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Security
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from typing import Dict, Any
 import base64
 
-from database import SessionLocal
 from dependencies import get_db
 from models import SocialAccount, SocialActivity, EmotionHistory, User
 from utils.crypto import encrypt_token, decrypt_token
@@ -12,6 +12,9 @@ from security import verify_access_token
 from providers import instagram, facebook, x as x_provider
 
 router = APIRouter(prefix="/social", tags=["social"])
+
+# ✅ ADD THIS (Required for Swagger to attach token)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
 
 # =====================================================
@@ -112,7 +115,6 @@ def list_accounts(request: Request, db: Session = Depends(get_db)):
 # =====================================================
 @router.get("/connected")
 def get_connected(request: Request, db: Session = Depends(get_db)):
-    """Return list of provider names that user has connected."""
     user = _resolve_user_from_request(request, db)
 
     accounts = db.query(SocialAccount).filter(
@@ -123,10 +125,23 @@ def get_connected(request: Request, db: Session = Depends(get_db)):
 
 
 # =====================================================
-# 🔐 OAUTH URL (WITH ERROR HANDLING)
+# 🔐 OAUTH URL (FIXED FOR SWAGGER)
 # =====================================================
 @router.get("/oauth-url/{provider}")
-def get_oauth_url(provider: str, request: Request, client_redirect: str = "myapp://oauth-success"):
+def get_oauth_url(
+    provider: str,
+    request: Request,
+    client_redirect: str = "myapp://oauth-success",
+    token: str = Security(oauth2_scheme),  # 👈 THIS FIXES 401
+):
+    # Reconstruct Authorization header for your existing logic
+    request.headers.__dict__["_list"].append(
+        (
+            b"authorization",
+            f"Bearer {token}".encode(),
+        )
+    )
+
     auth = request.headers.get("authorization") or request.headers.get("Authorization")
 
     if not auth:
@@ -156,6 +171,7 @@ def get_oauth_url(provider: str, request: Request, client_redirect: str = "myapp
             raise HTTPException(status_code=400, detail="Unknown provider")
 
         return {"url": url}
+
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=f"Provider not configured: {str(e)}")
 
