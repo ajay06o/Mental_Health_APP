@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart'; // ✅ Added
 import 'package:go_router/go_router.dart';
 
 import '../services/auth_service.dart';
@@ -25,8 +26,10 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
 
-    // 🔥 Light vibration on app start
-    HapticFeedback.lightImpact();
+    // ✅ FIX: Disable vibration on Web
+    if (!kIsWeb) {
+      HapticFeedback.lightImpact();
+    }
 
     _controller = AnimationController(
       vsync: this,
@@ -67,7 +70,7 @@ class _SplashScreenState extends State<SplashScreen>
       final rememberMeEnabled =
           await AuthService.isRememberMeEnabled();
 
-      if (rememberMeEnabled) {
+      if (rememberMeEnabled && !kIsWeb) {
         final canBiometric =
             await BiometricService.canAuthenticate();
 
@@ -76,7 +79,6 @@ class _SplashScreenState extends State<SplashScreen>
               await BiometricService.authenticate();
 
           if (!authenticated) {
-            // ❌ Failed biometric → fallback login
             _navigate("/login");
             return;
           }
@@ -86,7 +88,6 @@ class _SplashScreenState extends State<SplashScreen>
       // ✅ All checks passed → Home
       _navigate("/home");
     } catch (e) {
-      // 🛡 If anything unexpected happens → Safe fallback
       _navigate("/login");
     }
   }
@@ -155,7 +156,6 @@ class _SplashScreenState extends State<SplashScreen>
 
                   SizedBox(height: 30),
 
-                  // 🔥 Premium Loader
                   SizedBox(
                     width: 28,
                     height: 28,

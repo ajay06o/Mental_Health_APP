@@ -1,7 +1,6 @@
 import 'package:jwt_decoder/jwt_decoder.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'api_client.dart';
-import '../router/app_router.dart';
 
 class AuthService {
   // =================================================
@@ -11,17 +10,18 @@ class AuthService {
   static const String _refreshTokenKey = "refresh_token";
 
   // =================================================
-  // 🔐 SECURE STORAGE
-  // =================================================
-  static const FlutterSecureStorage _secureStorage =
-      FlutterSecureStorage();
-
-  // =================================================
   // 💾 REMEMBER ME KEYS
   // =================================================
   static const String _savedEmailKey = "saved_email";
   static const String _savedPasswordKey = "saved_password";
   static const String _rememberMeKey = "remember_me";
+
+  static const FlutterSecureStorage _secureStorage =
+      FlutterSecureStorage();
+
+  // 🔥 MEMORY CACHE (Fix Web issues)
+  static String? _memoryAccessToken;
+  static String? _memoryRefreshToken;
 
   static bool cachedLoginState = false;
   static bool _initialized = false;
@@ -32,17 +32,21 @@ class AuthService {
   static Future<void> init() async {
     if (_initialized) return;
 
-    final token =
-        await _secureStorage.read(key: _accessTokenKey);
+    try {
+      final token =
+          await _secureStorage.read(key: _accessTokenKey);
 
-    if (token != null &&
-        token.isNotEmpty &&
-        !JwtDecoder.isExpired(token)) {
-      cachedLoginState = true;
-    } else {
+      if (token != null &&
+          token.isNotEmpty &&
+          !JwtDecoder.isExpired(token)) {
+        _memoryAccessToken = token;
+        cachedLoginState = true;
+      } else {
+        await _clearTokens();
+        cachedLoginState = false;
+      }
+    } catch (_) {
       cachedLoginState = false;
-      await _secureStorage.delete(key: _accessTokenKey);
-      await _secureStorage.delete(key: _refreshTokenKey);
     }
 
     _initialized = true;
@@ -93,14 +97,7 @@ class AuthService {
         },
       );
 
-      final success =
-          await _saveTokensFromResponse(data);
-
-      if (success) {
-        authNotifier.notify();
-      }
-
-      return success;
+      return await _saveTokensFromResponse(data);
     } catch (_) {
       return false;
     }
@@ -119,6 +116,11 @@ class AuthService {
       return false;
     }
 
+    // Save to memory
+    _memoryAccessToken = accessToken;
+    _memoryRefreshToken = refreshToken;
+
+    // Save to storage
     await _secureStorage.write(
       key: _accessTokenKey,
       value: accessToken,
@@ -136,45 +138,55 @@ class AuthService {
   }
 
   // =================================================
-  // 🔍 LOGIN STATE
-  // =================================================
-  static Future<bool> isLoggedIn() async {
-    if (!_initialized) {
-      await init();
-    }
-    return cachedLoginState;
-  }
-
-  // =================================================
   // 🎫 GET ACCESS TOKEN
   // =================================================
   static Future<String?> getAccessToken() async {
-    final token =
-        await _secureStorage.read(key: _accessTokenKey);
-
-    if (token == null ||
-        token.isEmpty ||
-        JwtDecoder.isExpired(token)) {
-      return null;
+    if (_memoryAccessToken != null &&
+        !JwtDecoder.isExpired(_memoryAccessToken!)) {
+      return _memoryAccessToken;
     }
 
-    return token;
+    try {
+      final token =
+          await _secureStorage.read(key: _accessTokenKey);
+
+      if (token != null &&
+          token.isNotEmpty &&
+          !JwtDecoder.isExpired(token)) {
+        _memoryAccessToken = token;
+        return token;
+      }
+    } catch (_) {}
+
+    return null;
   }
 
   // =================================================
   // 🔄 GET REFRESH TOKEN
   // =================================================
   static Future<String?> getRefreshToken() async {
-    return await _secureStorage.read(
-        key: _refreshTokenKey);
+    if (_memoryRefreshToken != null) {
+      return _memoryRefreshToken;
+    }
+
+    try {
+      final token =
+          await _secureStorage.read(key: _refreshTokenKey);
+      _memoryRefreshToken = token;
+      return token;
+    } catch (_) {
+      return null;
+    }
   }
 
   // =================================================
-  // 🔐 SAVE ACCESS TOKEN (ON REFRESH)
+  // 🔄 SAVE ACCESS TOKEN (ON REFRESH)
   // =================================================
   static Future<void> saveAccessToken(
       String accessToken) async {
     if (JwtDecoder.isExpired(accessToken)) return;
+
+    _memoryAccessToken = accessToken;
 
     await _secureStorage.write(
       key: _accessTokenKey,
@@ -182,35 +194,6 @@ class AuthService {
     );
 
     cachedLoginState = true;
-    authNotifier.notify();
-  }
-
-  // =================================================
-  // 👤 GET USER INFO
-  // =================================================
-  static Future<Map<String, dynamic>?>
-      getUserFromToken() async {
-    final token = await getAccessToken();
-    if (token == null) return null;
-
-    return JwtDecoder.decode(token);
-  }
-
-  // =================================================
-  // ⏳ TOKEN EXPIRY CHECK
-  // =================================================
-  static Future<bool> isTokenExpiringSoon(
-      {int minutes = 2}) async {
-    final token = await getAccessToken();
-    if (token == null) return true;
-
-    final expiryDate =
-        JwtDecoder.getExpirationDate(token);
-
-    final remaining =
-        expiryDate.difference(DateTime.now());
-
-    return remaining.inMinutes <= minutes;
   }
 
   // =================================================
@@ -247,11 +230,11 @@ class AuthService {
   // =================================================
   static Future<Map<String, String>>
       loadSavedCredentials() async {
-    final rememberMe =
+    final remember =
         await _secureStorage.read(
             key: _rememberMeKey);
 
-    if (rememberMe != "true") return {};
+    if (remember != "true") return {};
 
     return {
       "email":
@@ -269,25 +252,39 @@ class AuthService {
   // 🔄 REMEMBER ME STATUS
   // =================================================
   static Future<bool> isRememberMeEnabled() async {
-    final rememberMe =
+    final remember =
         await _secureStorage.read(
             key: _rememberMeKey);
-    return rememberMe == "true";
+    return remember == "true";
+  }
+
+  // =================================================
+  // 🔍 LOGIN STATE
+  // =================================================
+  static Future<bool> isLoggedIn() async {
+    if (!_initialized) {
+      await init();
+    }
+    return cachedLoginState;
   }
 
   // =================================================
   // 🚪 LOGOUT
   // =================================================
   static Future<void> logout() async {
+    await _clearTokens();
+    _memoryAccessToken = null;
+    _memoryRefreshToken = null;
+    cachedLoginState = false;
+  }
+
+  // =================================================
+  // 🧹 CLEAR TOKENS
+  // =================================================
+  static Future<void> _clearTokens() async {
     await _secureStorage.delete(
         key: _accessTokenKey);
     await _secureStorage.delete(
         key: _refreshTokenKey);
-    await _secureStorage.delete(
-        key: _savedPasswordKey);
-
-    cachedLoginState = false;
-
-    authNotifier.notify();
   }
 }

@@ -32,7 +32,6 @@ from schemas import (
     EmotionCreate,
     EmotionResponse,
     RefreshTokenRequest,
-    ProfileUpdate,
     ProfileResponse,
 )
 from security import (
@@ -87,20 +86,22 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.include_router(social_router)
+# =====================================================
+# ✅ PRODUCTION SAFE CORS CONFIG
+# =====================================================
+origins = [
+    # Production Frontend
+    "https://mental-health-app-zpng.onrender.com",
+    "https://mental-health-app-1-rv33.onrender.com",
 
-# =====================================================
-# ✅ PROPER CORS CONFIG (WEB + LOCAL + PROD)
-# =====================================================
+    # Localhost base domains
+    "http://localhost",
+    "http://127.0.0.1",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://mental-health-app-zpng.onrender.com",
-        "https://mental-health-app-1-rv33.onrender.com",
-        "http://localhost:3000",
-        "http://localhost:5000",
-        "http://localhost:8080",
-    ],
+    allow_origins=origins,
     allow_origin_regex=r"http://localhost:\d+",
     allow_credentials=True,
     allow_methods=["*"],
@@ -108,14 +109,19 @@ app.add_middleware(
 )
 
 # =====================================================
-# ✅ SHOW REAL ERROR (DEBUG SAFE)
+# INCLUDE ROUTERS (AFTER CORS)
+# =====================================================
+app.include_router(social_router)
+
+# =====================================================
+# GLOBAL ERROR HANDLER
 # =====================================================
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
     logger.exception("🔥 Unhandled backend error")
     return JSONResponse(
         status_code=500,
-        content={"detail": str(exc)},  # Shows real error
+        content={"detail": str(exc)},
     )
 
 # =====================================================
@@ -186,10 +192,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     email = user.email.strip().lower()
 
     if db.query(User).filter(User.email == email).first():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered",
-        )
+        raise HTTPException(400, "Email already registered")
 
     new_user = User(
         email=email,
@@ -200,7 +203,6 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     db.commit()
 
     logger.info(f"User registered: {email}")
-
     return {"message": "User registered successfully"}
 
 # =====================================================
@@ -212,14 +214,10 @@ def login(
     db: Session = Depends(get_db),
 ):
     email = form.username.strip().lower()
-
     user = db.query(User).filter(User.email == email).first()
 
     if not user or not verify_password(form.password, user.password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-        )
+        raise HTTPException(401, "Invalid credentials")
 
     logger.info(f"User login: {email}")
 
@@ -228,94 +226,6 @@ def login(
         refresh_token=create_refresh_token({"sub": user.email}),
         token_type="bearer",
     )
-
-# =====================================================
-# REFRESH
-# =====================================================
-@app.post("/refresh", response_model=TokenResponse)
-def refresh(payload: RefreshTokenRequest):
-    email = verify_refresh_token(payload.refresh_token)
-
-    if not email:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token",
-        )
-
-    return TokenResponse(
-        access_token=create_access_token({"sub": email}),
-        refresh_token=create_refresh_token({"sub": email}),
-        token_type="bearer",
-    )
-
-# =====================================================
-# PREDICT
-# =====================================================
-@app.post("/predict", response_model=EmotionResponse)
-def predict(
-    data: EmotionCreate,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    if not data.text or not data.text.strip():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Text cannot be empty",
-        )
-
-    logger.info(f"📝 INPUT: {data.text}")
-
-    result = final_prediction(data.text)
-    logger.info(f"🧠 MODEL OUTPUT: {result}")
-
-    emotion = result.get("final_mental_state", "neutral").strip().lower()
-    confidence = float(result.get("confidence", 0.0))
-    severity = calculate_severity(emotion, confidence)
-
-    record = EmotionHistory(
-        user_id=user.id,
-        platform="manual",
-        text=None,
-        emotion=emotion,
-        confidence=confidence,
-        severity=severity,
-    )
-
-    db.add(record)
-    db.commit()
-    db.refresh(record)
-
-    return EmotionResponse(
-        emotion=record.emotion,
-        confidence=record.confidence,
-        severity=record.severity,
-        timestamp=record.timestamp,
-    )
-
-# =====================================================
-# HISTORY
-# =====================================================
-@app.get("/history", response_model=list[EmotionResponse])
-def history(
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    records = (
-        db.query(EmotionHistory)
-        .filter(EmotionHistory.user_id == user.id)
-        .order_by(EmotionHistory.timestamp.desc())
-        .all()
-    )
-
-    return [
-        EmotionResponse(
-            emotion=r.emotion,
-            confidence=r.confidence,
-            severity=r.severity,
-            timestamp=r.timestamp,
-        )
-        for r in records
-    ]
 
 # =====================================================
 # PROFILE
