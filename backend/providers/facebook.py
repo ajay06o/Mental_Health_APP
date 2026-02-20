@@ -5,7 +5,7 @@ CLIENT_ID = os.getenv("FACEBOOK_CLIENT_ID")
 CLIENT_SECRET = os.getenv("FACEBOOK_CLIENT_SECRET")
 
 
-def authorize_url(redirect_uri: str, state: str = "", scopes: str = "public_profile,email") -> str:
+def authorize_url(redirect_uri: str, state: str = "", scopes: str = "public_profile") -> str:
     if not CLIENT_ID:
         raise RuntimeError("FACEBOOK_CLIENT_ID not configured")
 
