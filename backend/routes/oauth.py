@@ -6,7 +6,7 @@ import os
 import base64
 import urllib.parse
 
-from database import get_db
+from dependencies import get_db
 from models import SocialAccount, User
 from utils.crypto import encrypt_token
 from security import verify_access_token
