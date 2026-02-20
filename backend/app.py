@@ -231,7 +231,7 @@ def history(
     ]
 
 # =====================================================
-# PREDICT
+# PREDICT (FIXED — HYBRID LOGIC)
 # =====================================================
 @app.post("/predict")
 def predict(
@@ -242,13 +242,41 @@ def predict(
     if not data.text or not data.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
-    result = final_prediction(data.text)
+    text = data.text.strip().lower()
 
-    emotion = result.get("final_mental_state", "neutral")
-    confidence = float(result.get("confidence", 0.0))
+    # 🔥 Smart keyword override for short single-word inputs
+    keyword_map = {
+        "happy": "happy",
+        "sad": "sad",
+        "angry": "angry",
+        "depressed": "depression",
+        "anxious": "anxiety",
+        "suicidal": "suicidal",
+    }
 
-    # Simple severity logic
-    severity = 4 if confidence >= 0.8 else 3 if confidence >= 0.6 else 2
+    if text in keyword_map:
+        emotion = keyword_map[text]
+        confidence = 0.95
+    else:
+        result = final_prediction(text)
+        emotion = result.get("final_mental_state", "neutral")
+        confidence = float(result.get("confidence", 0.0))
+
+        # If model confidence too low, keep neutral
+        if confidence < 0.4:
+            emotion = "neutral"
+
+    # 🎯 Improved severity logic
+    if emotion == "suicidal":
+        severity = 5
+    elif emotion in ["depression", "angry", "anxiety"]:
+        severity = 4
+    elif emotion == "sad":
+        severity = 3
+    elif emotion == "happy":
+        severity = 1
+    else:
+        severity = 2
 
     record = EmotionHistory(
         user_id=user.id,
