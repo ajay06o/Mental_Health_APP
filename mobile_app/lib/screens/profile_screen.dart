@@ -58,8 +58,15 @@ class _ProfileScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar:
-          AppBar(title: const Text("Profile")),
+      appBar: AppBar(
+        title: const Text("Profile"),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () => context.go("/settings"),
+          ),
+        ],
+      ),
       body: FutureBuilder<
           Map<String, dynamic>>(
         future: _profileFuture,

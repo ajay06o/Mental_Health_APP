@@ -1,295 +1,399 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from typing import List
-import logging
+from typing import Dict, Any
+import base64
 
-from models import SocialAccount, User, EmotionHistory
+from database import get_db
+from models import SocialAccount, SocialActivity, EmotionHistory, User
+from utils.crypto import encrypt_token, decrypt_token
 from ai_models.mental_health_model import final_prediction
 from security import verify_access_token
-from dependencies import get_db
+from providers import instagram, facebook, x as x_provider
 
-from utils.crypto import encrypt_token, decrypt_token
-from utils.alerts import trigger_crisis_alert
-
-# =====================================================
-# LOGGER
-# =====================================================
-logger = logging.getLogger("social")
-
-router = APIRouter(prefix="/social", tags=["Social"])
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
+router = APIRouter(prefix="/social", tags=["social"])
 
 
-# =====================================================
-# AUTH USER
-# =====================================================
-def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
+def _resolve_user_from_request(request: Request, db: Session) -> User:
+    auth = request.headers.get("authorization") or request.headers.get("Authorization")
+    if not auth:
+        raise HTTPException(status_code=401, detail="Missing authorization header")
+
+    parts = auth.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+
+    token = parts[1]
     email = verify_access_token(token)
-
     if not email:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-        )
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     user = db.query(User).filter(User.email == email).first()
-
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
-        )
+        raise HTTPException(status_code=401, detail="User not found")
 
     return user
 
 
-# =====================================================
-# SEVERITY CALCULATION
-# =====================================================
-def calculate_severity(emotion: str, confidence: float) -> int:
-    emotion = emotion.lower()
-
-    if emotion == "suicidal":
-        return 5
-    if confidence >= 0.85:
-        return 4
-    if confidence >= 0.65:
-        return 3
-    if confidence >= 0.45:
-        return 2
-    return 1
-
-
-# =====================================================
-# CONNECT SOCIAL ACCOUNT (ENCRYPT TOKEN)
-# =====================================================
 @router.post("/connect")
-def connect_social(
-    platform: str,
-    access_token: str,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    if not platform or not access_token:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Platform and access token required",
-        )
+def connect_account(request: Request, payload: Dict[str, Any], db: Session = Depends(get_db)):
+    """Connect or update a social account. Expects: provider, external_id, access_token, refresh_token (opt), scopes"""
+    user = _resolve_user_from_request(request, db)
 
-    platform = platform.lower().strip()
+    prov = payload.get("provider")
+    ext = payload.get("external_id")
+    access = payload.get("access_token")
+    refresh = payload.get("refresh_token")
+    scopes = payload.get("scopes")
 
-    try:
-        encrypted_token = encrypt_token(access_token)
-    except Exception as e:
-        logger.error(f"Encryption failed: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Token encryption failed",
-        )
+    if not prov or not ext or not access:
+        raise HTTPException(status_code=400, detail="provider, external_id and access_token required")
 
-    existing = db.query(SocialAccount).filter(
-        SocialAccount.user_id == user.id,
-        SocialAccount.platform == platform,
-    ).first()
+    # Upsert
+    account = (
+        db.query(SocialAccount)
+        .filter(SocialAccount.user_id == user.id, SocialAccount.provider == prov, SocialAccount.external_id == ext)
+        .first()
+    )
 
-    if existing:
-        existing.access_token = encrypted_token
-        existing.is_active = True
+    enc_access = encrypt_token(access)
+    enc_refresh = encrypt_token(refresh) if refresh else None
+
+    if account:
+        account.access_token = enc_access
+        account.refresh_token = enc_refresh
+        account.scopes = scopes
     else:
-        db.add(
-            SocialAccount(
-                user_id=user.id,
-                platform=platform,
-                access_token=encrypted_token,
-            )
+        account = SocialAccount(
+            user_id=user.id,
+            provider=prov,
+            external_id=ext,
+            access_token=enc_access,
+            refresh_token=enc_refresh,
+            scopes=scopes,
         )
+        db.add(account)
 
     db.commit()
 
-    logger.info(f"{platform} connected for user {user.id}")
-
-    return {"message": f"{platform} connected successfully"}
+    return {"status": "connected", "provider": prov}
 
 
-# =====================================================
-# LIST CONNECTED ACCOUNTS
-# =====================================================
-@router.get("/connected")
-def get_connected_accounts(
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    accounts = db.query(SocialAccount).filter(
-        SocialAccount.user_id == user.id,
-        SocialAccount.is_active == True
-    ).all()
+@router.get("/accounts")
+def list_accounts(request: Request, db: Session = Depends(get_db)):
+    user = _resolve_user_from_request(request, db)
+    accounts = (
+        db.query(SocialAccount)
+        .filter(SocialAccount.user_id == user.id)
+        .all()
+    )
 
     return [
         {
-            "platform": acc.platform,
-            "connected_at": acc.connected_at,
+            "id": a.id,
+            "provider": a.provider,
+            "external_id": a.external_id,
+            "last_synced": a.last_synced,
+            "scopes": a.scopes,
         }
-        for acc in accounts
+        for a in accounts
     ]
 
 
-# =====================================================
-# DISCONNECT ACCOUNT
-# =====================================================
-@router.delete("/disconnect/{platform}")
-def disconnect_account(
-    platform: str,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    platform = platform.lower().strip()
+@router.get("/oauth-url/{provider}")
+def get_oauth_url(provider: str, request: Request, client_redirect: str = "myapp://oauth-success"):
+    """Return a provider authorize URL tailored for mobile flow. The user's access token is encoded into state."""
+    auth = request.headers.get("authorization") or request.headers.get("Authorization")
+    if not auth:
+        raise HTTPException(status_code=401, detail="Missing authorization header")
 
-    account = db.query(SocialAccount).filter(
-        SocialAccount.user_id == user.id,
-        SocialAccount.platform == platform,
-    ).first()
+    parts = auth.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
 
-    if not account:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Account not found",
-        )
+    token = parts[1]
 
-    account.is_active = False
+    # Build backend callback URL
+    base = str(request.base_url).rstrip("/")
+    callback_url = f"{base}/oauth/{provider}/callback"
+
+    # State encodes client_redirect and token
+    state_raw = f"{client_redirect}|{token}"
+    state = base64.urlsafe_b64encode(state_raw.encode()).decode()
+
+    # Use existing authorize helper to build provider URL
+    if provider == "instagram":
+        url = instagram.authorize_url(redirect_uri=callback_url, state=state)
+    elif provider == "facebook":
+        url = facebook.authorize_url(redirect_uri=callback_url, state=state)
+    elif provider == "x":
+        url = x_provider.authorize_url(redirect_uri=callback_url, state=state)
+    else:
+        raise HTTPException(status_code=400, detail="Unknown provider")
+
+    return {"url": url}
+@router.post("/disconnect")
+def disconnect_account(request: Request, payload: Dict[str, Any], db: Session = Depends(get_db)):
+    user = _resolve_user_from_request(request, db)
+    aid = payload.get("account_id")
+    if not aid:
+        raise HTTPException(status_code=400, detail="account_id required")
+
+    acc = db.query(SocialAccount).filter(SocialAccount.id == aid, SocialAccount.user_id == user.id).first()
+    if not acc:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    db.delete(acc)
     db.commit()
 
-    logger.info(f"{platform} disconnected for user {user.id}")
-
-    return {"message": f"{platform} disconnected successfully"}
+    return {"status": "disconnected"}
 
 
-# =====================================================
-# MOCK FETCH (Replace with real APIs later)
-# =====================================================
-def fetch_platform_data(platform: str, access_token: str) -> List[str]:
+def _fetch_social_activities_for_account(account: SocialAccount) -> list:
+    """Dispatch to provider-specific fetchers to retrieve recent activities."""
+    try:
+        p = account.provider.lower()
+        if p == "instagram":
+            from providers.instagram_api import fetch_recent_activities
 
-    # In production:
-    # Call Instagram / X / Reddit APIs using access_token
+            return fetch_recent_activities(account)
+        if p == "facebook":
+            from providers.facebook_api import fetch_recent_activities
 
-    if platform == "instagram":
-        return [
-            "Feeling stressed lately",
-            "Life is overwhelming sometimes",
-        ]
+            return fetch_recent_activities(account)
+        if p in ("x", "twitter"):
+            from providers.x_api import fetch_recent_activities
 
-    if platform == "x":
-        return [
-            "Why does everything feel heavy?",
-            "Trying to stay positive",
-        ]
-
-    if platform == "reddit":
-        return [
-            "I feel anxious about my future",
-            "Sometimes I just feel empty",
-        ]
+            return fetch_recent_activities(account)
+    except Exception:
+        return []
 
     return []
 
 
-# =====================================================
-# CORE ANALYSIS LOGIC (Scheduler + API Reusable)
-# =====================================================
-def run_social_analysis(user: User, db: Session):
+def analyze_social_accounts(user: User, db: Session):
+    """Used by scheduler: fetch activities, predict, and store EmotionHistory and SocialActivity."""
+    accounts = db.query(SocialAccount).filter(SocialAccount.user_id == user.id).all()
 
-    accounts = db.query(SocialAccount).filter(
-        SocialAccount.user_id == user.id,
-        SocialAccount.is_active == True
-    ).all()
+    for acc in accounts:
+        activities = _fetch_social_activities_for_account(acc)
 
-    if not accounts:
-        return []
+        for act in activities:
+            # Deduplication: Check if this item already exists
+            provider_item_id = act.get("provider_item_id")
+            if provider_item_id:
+                existing = db.query(SocialActivity).filter(
+                    SocialActivity.account_id == acc.id,
+                    SocialActivity.provider_item_id == provider_item_id
+                ).first()
+                if existing:
+                    continue
 
-    results = []
-
-    for account in accounts:
-        try:
-            decrypted_token = decrypt_token(account.access_token)
-
-            texts = fetch_platform_data(
-                account.platform,
-                decrypted_token
+            sa = SocialActivity(
+                account_id=acc.id,
+                provider_item_id=provider_item_id,
+                activity_type=act.get("activity_type", "unknown"),
+                content=act.get("content"),
+                metadata=str(act.get("metadata")),
+                timestamp=act.get("timestamp"),
+                processed=False,
             )
+            db.add(sa)
+            db.commit()
 
-            if not texts:
+            # Run prediction on content if available
+            if sa.content:
+                res = final_prediction(sa.content)
+
+                eh = EmotionHistory(
+                    user_id=user.id,
+                    platform=f"social:{acc.provider}",
+                    emotion=res.get("final_mental_state", "neutral"),
+                    confidence=float(res.get("confidence", 0.0)),
+                    severity=2,
+                    text=sa.content,
+                )
+                db.add(eh)
+                sa.processed = True
+                db.commit()
+
+
+@router.post("/sync")
+def sync_account(request: Request, payload: Dict[str, Any], db: Session = Depends(get_db)):
+    user = _resolve_user_from_request(request, db)
+    account_id = payload.get("account_id")
+    if not account_id:
+        raise HTTPException(status_code=400, detail="account_id required")
+
+    acc = db.query(SocialAccount).filter(SocialAccount.id == account_id, SocialAccount.user_id == user.id).first()
+    if not acc:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    activities = _fetch_social_activities_for_account(acc)
+
+    for act in activities:
+        # Deduplication: Check if this item already exists
+        provider_item_id = act.get("provider_item_id")
+        if provider_item_id:
+            existing = db.query(SocialActivity).filter(
+                SocialActivity.account_id == acc.id,
+                SocialActivity.provider_item_id == provider_item_id
+            ).first()
+            if existing:
                 continue
 
-            combined_text = " ".join(texts)
+        sa = SocialActivity(
+            account_id=acc.id,
+            provider_item_id=provider_item_id,
+            activity_type=act.get("activity_type", "unknown"),
+            content=act.get("content"),
+            metadata=str(act.get("metadata")),
+            timestamp=act.get("timestamp"),
+            processed=False,
+        )
+        db.add(sa)
+        db.commit()
 
-            prediction = final_prediction(combined_text)
+        if sa.content:
+            res = final_prediction(sa.content)
 
-            emotion = prediction["final_mental_state"].lower()
-            confidence = float(prediction["confidence"])
-            severity = calculate_severity(emotion, confidence)
-
-            # =============================
-            # 🚨 CRISIS ALERT SYSTEM
-            # =============================
-            if (
-                severity == 5
-                and user.alerts_enabled
-                and user.emergency_email
-            ):
-                trigger_crisis_alert(user)
-                logger.warning(
-                    f"Crisis alert triggered for user {user.id}"
-                )
-
-            db.add(
-                EmotionHistory(
-                    user_id=user.id,
-                    platform=account.platform,
-                    emotion=emotion,
-                    confidence=confidence,
-                    severity=severity,
-                )
+            eh = EmotionHistory(
+                user_id=user.id,
+                platform=f"social:{acc.provider}",
+                emotion=res.get("final_mental_state", "neutral"),
+                confidence=float(res.get("confidence", 0.0)),
+                severity=2,
+                text=sa.content,
             )
+            db.add(eh)
+            sa.processed = True
+            db.commit()
 
-            results.append({
-                "platform": account.platform,
-                "emotion": emotion,
-                "confidence": confidence,
-                "severity": severity,
-                "analyzed_posts": len(texts),
-            })
+    return {"status": "synced", "activities": len(activities)}
+@router.get("/connected")
+def get_connected_accounts(request: Request, db: Session = Depends(get_db)):
+    """Return list of connected provider names for the authenticated user."""
+    user = _resolve_user_from_request(request, db)
 
-        except Exception as e:
-            logger.error(
-                f"Error analyzing {account.platform} for user {user.id}: {e}"
-            )
-            db.rollback()
+    accounts = db.query(SocialAccount).filter(SocialAccount.user_id == user.id).all()
 
+    return [a.provider for a in accounts]
+
+
+@router.delete("/disconnect/{platform}")
+def disconnect_platform(platform: str, request: Request, db: Session = Depends(get_db)):
+    """Delete the social account(s) for this platform for the user."""
+    user = _resolve_user_from_request(request, db)
+    platform = platform.lower().strip()
+
+    deleted = db.query(SocialAccount).filter(
+        SocialAccount.user_id == user.id, SocialAccount.provider == platform
+    ).delete()
     db.commit()
 
-    return results
+    if deleted == 0:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    return {"message": f"{platform} disconnected"}
 
 
-# =====================================================
-# ANALYZE SOCIAL ACCOUNTS (API)
-# =====================================================
 @router.post("/analyze")
-def analyze_social_accounts(
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    results = run_social_analysis(user, db)
+def analyze_all(request: Request, db: Session = Depends(get_db)):
+    user = _resolve_user_from_request(request, db)
+    analyze_social_accounts(user, db)
+    return {"status": "analysis_triggered"}
 
-    if not results:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No public data found",
+
+@router.post("/background-sync")
+def background_sync(request: Request, db: Session = Depends(get_db)):
+    user = _resolve_user_from_request(request, db)
+    # For simplicity, call analyze which will fetch/process
+    analyze_social_accounts(user, db)
+    return {"status": "background_sync_started"}
+
+
+@router.get("/sync-status/{platform}")
+def sync_status(platform: str, request: Request, db: Session = Depends(get_db)):
+    user = _resolve_user_from_request(request, db)
+    platform = platform.lower().strip()
+
+    account = db.query(SocialAccount).filter(SocialAccount.user_id == user.id, SocialAccount.provider == platform).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    total = db.query(SocialActivity).filter(SocialActivity.account_id == account.id).count()
+    analyzed = db.query(SocialActivity).filter(SocialActivity.account_id == account.id, SocialActivity.processed == True).count()
+
+    return {"analyzed": analyzed, "total": total}
+
+
+@router.post("/retry-sync")
+def retry_sync(payload: Dict[str, Any], request: Request, db: Session = Depends(get_db)):
+    user = _resolve_user_from_request(request, db)
+    platform = payload.get("platform")
+    if not platform:
+        raise HTTPException(status_code=400, detail="platform required")
+
+    account = db.query(SocialAccount).filter(SocialAccount.user_id == user.id, SocialAccount.provider == platform).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    # Trigger a sync for this account
+    activities = _fetch_social_activities_for_account(account)
+    processed = 0
+    for act in activities:
+        sa = SocialActivity(
+            account_id=account.id,
+            activity_type=act.get("activity_type", "unknown"),
+            content=act.get("content"),
+            metadata=str(act.get("metadata")),
+            timestamp=act.get("timestamp"),
+            processed=False,
         )
+        db.add(sa)
+        db.commit()
 
-    logger.info(f"Social analysis completed for user {user.id}")
+        if sa.content:
+            res = final_prediction(sa.content)
+            eh = EmotionHistory(
+                user_id=user.id,
+                platform=f"social:{account.provider}",
+                emotion=res.get("final_mental_state", "neutral"),
+                confidence=float(res.get("confidence", 0.0)),
+                severity=2,
+                text=sa.content,
+            )
+            db.add(eh)
+            sa.processed = True
+            db.commit()
+            processed += 1
+
+    return {"status": "retried", "processed": processed}
+
+
+@router.get("/sync-logs")
+def sync_logs(request: Request, db: Session = Depends(get_db)):
+    user = _resolve_user_from_request(request, db)
+
+    logs = (
+        db.query(SocialActivity)
+        .join(SocialAccount, SocialAccount.id == SocialActivity.account_id)
+        .filter(SocialAccount.user_id == user.id)
+        .order_by(SocialActivity.timestamp.desc())
+        .limit(200)
+        .all()
+    )
+
+    return [
+        {
+            "id": l.id,
+            "platform": db.query(SocialAccount).filter(SocialAccount.id == l.account_id).first().provider,
+            "type": l.activity_type,
+            "content": l.content,
+            "processed": l.processed,
+            "timestamp": l.timestamp,
+        }
+        for l in logs
+    ]
 
     return {
         "message": "Social analysis completed",

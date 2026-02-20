@@ -23,28 +23,21 @@ class PredictService {
         throw Exception("User not authenticated");
       }
 
-      final response = await ApiClient.post(
+      // ApiClient.post returns parsed JSON (decoded body) or throws.
+      final decoded = await ApiClient.post(
         "/predict",
         {"text": text},
       );
 
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-
+      if (decoded is Map<String, dynamic>) {
         return {
           "emotion": decoded["emotion"] ?? "neutral",
           "confidence": (decoded["confidence"] is num)
               ? (decoded["confidence"] as num).toDouble()
               : 0.5,
           "severity": decoded["severity"] ?? 1,
-          "timestamp":
-              decoded["timestamp"] ?? DateTime.now().toIso8601String(),
+          "timestamp": decoded["timestamp"] ?? DateTime.now().toIso8601String(),
         };
-      }
-
-      if (response.statusCode == 401) {
-        await AuthService.logout();
-        throw Exception("Session expired. Please login again.");
       }
 
       return _safePredictFallback();
@@ -72,17 +65,10 @@ class PredictService {
         throw Exception("User not authenticated");
       }
 
-      final response = await ApiClient.get("/history");
+      final decoded = await ApiClient.get("/history");
 
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        if (decoded is List) {
-          return decoded.cast<Map<String, dynamic>>();
-        }
-      }
-
-      if (response.statusCode == 401) {
-        await AuthService.logout();
+      if (decoded is List) {
+        return decoded.cast<Map<String, dynamic>>();
       }
 
       return [];
@@ -102,16 +88,13 @@ class PredictService {
       final token = await AuthService.getAccessToken();
       if (token == null) return [];
 
-      final response = await ApiClient.post(
+      final decoded = await ApiClient.post(
         "/semantic-search",
         {"query": query},
       );
 
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        if (decoded is List) {
-          return decoded.cast<Map<String, dynamic>>();
-        }
+      if (decoded is List) {
+        return decoded.cast<Map<String, dynamic>>();
       }
 
       return [];
@@ -130,17 +113,10 @@ class PredictService {
         throw Exception("User not authenticated");
       }
 
-      final response = await ApiClient.get("/profile");
+      final decoded = await ApiClient.get("/profile");
 
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        if (decoded is Map<String, dynamic>) {
-          return decoded;
-        }
-      }
-
-      if (response.statusCode == 401) {
-        await AuthService.logout();
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
       }
 
       return {};
@@ -185,18 +161,8 @@ class PredictService {
         body["alerts_enabled"] = alertsEnabled;
       }
 
-      final response = await ApiClient.put("/profile", body);
-
-      if (response.statusCode == 200) {
-        return true;
-      }
-
-      if (response.statusCode == 401) {
-        await AuthService.logout();
-        throw Exception("Session expired. Please login again.");
-      }
-
-      throw Exception("Failed to update profile");
+      await ApiClient.put("/profile", body);
+      return true;
     } catch (e) {
       throw Exception(e.toString());
     }

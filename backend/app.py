@@ -42,6 +42,9 @@ from security import (
 
 from ai_models.mental_health_model import final_prediction
 import models
+from routes.social import router as social_router
+from routes.oauth import router as oauth_router
+from routes.webhooks import router as webhooks_router
 
 # =====================================================
 # LOGGER
@@ -58,6 +61,11 @@ app = FastAPI(
     title="Mental Health Detection API",
     version="8.0.0",
 )
+
+# Social routes
+app.include_router(social_router)
+app.include_router(oauth_router)
+app.include_router(webhooks_router)
 
 # =====================================================
 # ROOT (Fix 404 at /)

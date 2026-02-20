@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -58,6 +59,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 });
 
                 // TODO: Integrate local_auth package
+              },
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // 🔹 Social Integrations Section
+          _buildSectionTitle("Social Integrations"),
+          _buildCard(
+            child: ListTile(
+              leading: const Icon(Icons.share_rounded, color: Colors.blue),
+              title: const Text("Connect Social Accounts"),
+              subtitle: const Text("Instagram, Facebook, X"),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+              onTap: () {
+                HapticFeedback.lightImpact();
+                context.go("/social-connect");
               },
             ),
           ),

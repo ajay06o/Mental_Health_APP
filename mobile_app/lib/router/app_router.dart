@@ -8,6 +8,7 @@ import '../screens/login_screen.dart';
 import '../screens/register_screen.dart';
 import '../screens/main_navigation_screen.dart';
 import '../screens/settings_screen.dart';
+import '../screens/social_connect_screen.dart';
 
 /// 🔁 Auth Change Notifier (Reactive Routing)
 class AuthNotifier extends ChangeNotifier {
@@ -94,6 +95,15 @@ final GoRouter appRouter = GoRouter(
       pageBuilder: (context, state) => _buildPage(
         state,
         const SettingsScreen(),
+      ),
+    ),
+
+    // ================= SOCIAL CONNECT =================
+    GoRoute(
+      path: "/social-connect",
+      pageBuilder: (context, state) => _buildPage(
+        state,
+        const SocialConnectScreen(),
       ),
     ),
   ],
