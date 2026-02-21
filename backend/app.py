@@ -40,9 +40,9 @@ from security import (
     verify_refresh_token,
 )
 
+# social routes removed (data/consent feature disabled)
 from ai_models.mental_health_model import final_prediction
 import models
-from routes.social import router as social_router
 # from routes.webhooks import router as webhooks_router  # DEPRECATED: social scraping removed
 
 # =====================================================
@@ -61,8 +61,7 @@ app = FastAPI(
     version="8.0.0",
 )
 
-# Social routes
-app.include_router(social_router)
+# Social routes removed (consent/upload endpoints disabled)
 # OAuth routes deprecated: provider OAuth has been removed in favor of explicit uploads
 # app.include_router(oauth_router)
 # app.include_router(webhooks_router)  # DEPRECATED: webhooks removed
