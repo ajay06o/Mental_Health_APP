@@ -5,21 +5,14 @@ import 'package:workmanager/workmanager.dart';
 import 'router/app_router.dart';
 import 'services/auth_service.dart';
 import 'services/api_client.dart';
-import 'services/social_service.dart';
-import 'services/oauth_listener_service.dart';
 
 /// ==========================================
 /// 🔄 BACKGROUND SYNC CALLBACK (MOBILE ONLY)
 /// ==========================================
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
-    try {
-      await SocialService.backgroundSync();
-      return Future.value(true);
-    } catch (e) {
-      debugPrint("Background sync error: $e");
-      return Future.value(false);
-    }
+    // Social background sync disabled (social connections removed)
+    return Future.value(true);
   });
 }
 
@@ -49,17 +42,7 @@ Future<void> main() async {
     appRouter.go("/login");
   };
 
-  // 🔗 OAuth Listener (ONLY mobile)
-  if (!kIsWeb) {
-    OAuthListenerService.startListening(
-      (platform) {
-        debugPrint("OAuth success from $platform");
-      },
-      (platform, error) {
-        debugPrint("OAuth failed for $platform: $error");
-      },
-    );
-  }
+  // OAuth listener removed (social connections disabled)
 
   runApp(const MentalHealthApp());
 }

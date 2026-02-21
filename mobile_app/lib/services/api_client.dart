@@ -331,6 +331,17 @@ class ApiClient {
   }
 
   // =================================================
+  // 🗂 Uploads
+  // =================================================
+  static Future<dynamic> uploadContent(List<Map<String, dynamic>> items) async {
+    return await post('/social/upload', {'items': items});
+  }
+
+  static Future<dynamic> getUploads() async {
+    return await get('/social/uploads');
+  }
+
+  // =================================================
   // 🧹 CLEANUP
   // =================================================
   static void dispose() {

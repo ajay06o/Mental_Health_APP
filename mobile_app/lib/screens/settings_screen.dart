@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../services/api_client.dart';
 import 'package:go_router/go_router.dart';
+import 'audit_logs_screen.dart';
+import 'upload_content_screen.dart';
+import 'my_uploads_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -43,6 +47,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
 
+          // 🔹 Data & Consent Section
+          _buildSectionTitle("Data & Consent"),
+          _buildCard(
+            child: ListTile(
+              leading: const Icon(Icons.privacy_tip, color: Colors.blue),
+              title: const Text("Consent & Data"),
+              subtitle: const Text("View consent and manage uploaded data"),
+              trailing: const Icon(Icons.info_outline, size: 16),
+              onTap: () async {
+                HapticFeedback.lightImpact();
+                await _showConsentDialog();
+              },
+            ),
+          ),
+
+          _buildCard(
+            child: ListTile(
+              leading: const Icon(Icons.history, color: Colors.blue),
+              title: const Text('Audit Logs'),
+              subtitle: const Text('View consent and deletion history'),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AuditLogsScreen()),
+                );
+              },
+            ),
+          ),
+
+          _buildCard(
+            child: ListTile(
+              leading: const Icon(Icons.upload_file, color: Colors.green),
+              title: const Text('Upload Content'),
+              subtitle: const Text('Upload posts, captions or screenshots'),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const UploadContentScreen()),
+                );
+              },
+            ),
+          ),
+
+          _buildCard(
+            child: ListTile(
+              leading: const Icon(Icons.list, color: Colors.green),
+              title: const Text('My Uploads'),
+              subtitle: const Text('View your uploaded items'),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const MyUploadsScreen()),
+                );
+              },
+            ),
+          ),
+
           const SizedBox(height: 20),
 
           // 🔹 Security Section
@@ -64,21 +125,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
 
           const SizedBox(height: 20),
-
-          // 🔹 Social Integrations Section
-          _buildSectionTitle("Social Integrations"),
-          _buildCard(
-            child: ListTile(
-              leading: const Icon(Icons.share_rounded, color: Colors.blue),
-              title: const Text("Connect Social Accounts"),
-              subtitle: const Text("Instagram, Facebook, X"),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-              onTap: () {
-                HapticFeedback.lightImpact();
-                context.go("/social-connect");
-              },
-            ),
-          ),
 
           const SizedBox(height: 20),
 
@@ -201,12 +247,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onPressed: () {
               Navigator.pop(context);
 
-              // TODO: Call delete API
+                // Call delete-my-data API
+                _deleteMyData();
             },
             child: const Text("Delete"),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _showConsentDialog() async {
+    try {
+      final res = await ApiClient.getPublic('/social/consent');
+      final consent = res['consent'] as String? ?? 'Consent text not available.';
+
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Consent and Disclaimer'),
+          content: SingleChildScrollView(child: Text(consent)),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Accept')),
+          ],
+        ),
+      );
+
+      if (accepted == true) {
+        await ApiClient.post('/social/consent', {'accepted': true});
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Consent accepted')));
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${e.toString()}')));
+    }
+  }
+
+  Future<void> _deleteMyData() async {
+    try {
+      // call server deletion
+      await ApiClient.post('/social/delete-data', {});
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Your uploaded data was deleted')));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to delete data: ${e.toString()}')));
+    }
   }
 }

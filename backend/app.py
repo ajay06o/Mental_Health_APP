@@ -43,8 +43,7 @@ from security import (
 from ai_models.mental_health_model import final_prediction
 import models
 from routes.social import router as social_router
-from routes.oauth import router as oauth_router
-from routes.webhooks import router as webhooks_router
+# from routes.webhooks import router as webhooks_router  # DEPRECATED: social scraping removed
 
 # =====================================================
 # LOGGER
@@ -64,8 +63,9 @@ app = FastAPI(
 
 # Social routes
 app.include_router(social_router)
-app.include_router(oauth_router)
-app.include_router(webhooks_router)
+# OAuth routes deprecated: provider OAuth has been removed in favor of explicit uploads
+# app.include_router(oauth_router)
+# app.include_router(webhooks_router)  # DEPRECATED: webhooks removed
 
 # =====================================================
 # ROOT (Fix 404 at /)

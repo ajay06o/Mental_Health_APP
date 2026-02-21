@@ -15,3 +15,13 @@ def encrypt_token(token: str) -> str:
 
 def decrypt_token(token: str) -> str:
     return cipher.decrypt(token.encode()).decode()
+
+
+def encrypt_data(plaintext: str) -> str:
+    """Encrypt arbitrary plaintext for storage (uses Fernet)."""
+    return cipher.encrypt(plaintext.encode()).decode()
+
+
+def decrypt_data(ciphertext: str) -> str:
+    """Decrypt data encrypted with `encrypt_data`."""
+    return cipher.decrypt(ciphertext.encode()).decode()

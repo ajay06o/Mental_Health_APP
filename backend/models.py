@@ -90,11 +90,16 @@ class EmotionHistory(Base):
     user = relationship("User", back_populates="emotions")
 
 
+# Social connection models removed (feature deprecated)
+# If you need to restore them, see backend/migrations/001_drop_social_accounts.sql
+# which can be reversed by restoring from backup.
+
+
 # =====================================================
-# 🔗 SOCIAL ACCOUNT
+# 📨 UPLOADED CONTENT (explicit user uploads)
 # =====================================================
-class SocialAccount(Base):
-    __tablename__ = "social_accounts"
+class UploadedContent(Base):
+    __tablename__ = "uploaded_content"
 
     id = Column(Integer, primary_key=True, index=True)
 
@@ -105,14 +110,11 @@ class SocialAccount(Base):
         index=True,
     )
 
-    provider = Column(String(50), nullable=False)
-    external_id = Column(String(255), nullable=False, index=True)
+    content_type = Column(String(50), nullable=False)  # post, caption, comment, screenshot
+    text = Column(Text, nullable=True)
+    screenshot_base64 = Column(Text, nullable=True)
 
-    access_token = Column(Text, nullable=False)
-    refresh_token = Column(Text, nullable=True)
-    scopes = Column(Text, nullable=True)
-
-    last_synced = Column(
+    created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
@@ -122,34 +124,27 @@ class SocialAccount(Base):
 
 
 # =====================================================
-# 🗂 SOCIAL ACTIVITY
+# 📝 AUDIT LOG
 # =====================================================
-class SocialActivity(Base):
-    __tablename__ = "social_activities"
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True, index=True)
 
-    account_id = Column(
+    user_id = Column(
         Integer,
-        ForeignKey("social_accounts.id", ondelete="CASCADE"),
+        ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
-    provider_item_id = Column(String(255), nullable=True, index=True)
-    activity_type = Column(String(50), nullable=False)
-    content = Column(Text, nullable=True)
-
-    # ✅ FIXED (renamed from metadata)
-    activity_metadata = Column(Text, nullable=True)
-
-    processed = Column(Boolean, default=False, nullable=False)
+    action = Column(String(100), nullable=False)
+    details = Column(Text, nullable=True)
 
     timestamp = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
-        index=True,
     )
 
-    account = relationship("SocialAccount")
+    user = relationship("User")

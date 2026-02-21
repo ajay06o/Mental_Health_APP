@@ -1,26 +1,21 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Security
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from typing import Dict, Any
-import base64
+from typing import Dict, Any, List
 
 from dependencies import get_db
-from models import SocialAccount, SocialActivity, EmotionHistory, User
-from utils.crypto import encrypt_token, decrypt_token
+from models import EmotionHistory, User, UploadedContent, AuditLog
+from utils.crypto import encrypt_data, decrypt_data
 from ai_models.mental_health_model import final_prediction
 from security import verify_access_token
-from providers import instagram, facebook, x as x_provider
 
 router = APIRouter(prefix="/social", tags=["social"])
-
-# ✅ ADD THIS (Required for Swagger to attach token)
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
 
 # =====================================================
 # 🔐 AUTH HELPER
 # =====================================================
 def _resolve_user_from_request(request: Request, db: Session) -> User:
+    """Extract and validate user from Authorization header."""
     auth = request.headers.get("authorization") or request.headers.get("Authorization")
     if not auth:
         raise HTTPException(status_code=401, detail="Missing authorization header")
@@ -44,159 +39,188 @@ def _resolve_user_from_request(request: Request, db: Session) -> User:
 
 
 # =====================================================
-# 🔗 CONNECT ACCOUNT
+# 👆 CONSENT & DISCLAIMER
 # =====================================================
-@router.post("/connect")
-def connect_account(request: Request, payload: Dict[str, Any], db: Session = Depends(get_db)):
+CONSENT_TEXT = (
+    "By uploading posts, captions, comments, or screenshots you explicitly consent to "
+    "their analysis. This analysis is for informational purposes only and is not a "
+    "medical diagnosis or treatment. If you are in crisis, seek professional help."
+)
+
+
+@router.get("/consent")
+def get_consent():
+    """Return consent text."""
+    return {"consent": CONSENT_TEXT}
+
+
+@router.post("/consent")
+def accept_consent(request: Request, payload: Dict[str, Any], db: Session = Depends(get_db)):
+    """Record user consent acceptance."""
+    accepted = payload.get("accepted")
+    if not accepted:
+        raise HTTPException(status_code=400, detail="accepted=true required")
+
     user = _resolve_user_from_request(request, db)
 
-    prov = payload.get("provider")
-    ext = payload.get("external_id")
-    access = payload.get("access_token")
-    refresh = payload.get("refresh_token")
-    scopes = payload.get("scopes")
+    # Record audit log for consent acceptance
+    log = AuditLog(user_id=user.id, action="consent_accepted", details="User accepted consent for uploads")
+    db.add(log)
+    db.commit()
 
-    if not prov or not ext or not access:
-        raise HTTPException(status_code=400, detail="provider, external_id and access_token required")
+    return {"status": "accepted", "user_id": user.id}
 
-    account = db.query(SocialAccount).filter(
-        SocialAccount.user_id == user.id,
-        SocialAccount.provider == prov,
-        SocialAccount.external_id == ext
-    ).first()
 
-    enc_access = encrypt_token(access)
-    enc_refresh = encrypt_token(refresh) if refresh else None
+# =====================================================
+# 🗂 UPLOAD CONTENT (EXPLICIT USER UPLOAD ONLY)
+# =====================================================
+@router.post("/upload")
+def upload_content(request: Request, payload: Dict[str, Any], db: Session = Depends(get_db)):
+    """
+    Accept explicit user uploads.
+    
+    Payload:
+    {
+      "items": [
+        {
+          "type": "post|caption|comment|screenshot",
+          "text": "optional text content",
+          "screenshot_base64": "optional base64 image"
+        }
+      ]
+    }
+    """
+    user = _resolve_user_from_request(request, db)
 
-    if account:
-        account.access_token = enc_access
-        account.refresh_token = enc_refresh
-        account.scopes = scopes
-    else:
-        account = SocialAccount(
+    items: List[Dict[str, Any]] = payload.get("items")
+    if not items or not isinstance(items, list):
+        raise HTTPException(status_code=400, detail="items: list required")
+
+    results = []
+
+    for it in items:
+        typ = it.get("type")
+        text = it.get("text")
+        screenshot = it.get("screenshot_base64")
+
+        if typ not in ("post", "caption", "comment", "screenshot"):
+            raise HTTPException(status_code=400, detail=f"invalid type: {typ}")
+
+        # Analyze plain-text before encrypting for storage
+        analysis = None
+        if text:
+            analysis = final_prediction(text)
+            # Persist emotion history (analysis result)
+            eh = EmotionHistory(
+                user_id=user.id,
+                platform="upload",
+                emotion=analysis.get("final_mental_state", analysis.get("emotion", "unknown")),
+                confidence=float(analysis.get("confidence", 0.0)),
+                severity=int(analysis.get("severity", 1)),
+                text=text,
+            )
+            db.add(eh)
+            db.commit()
+
+        # Encrypt content at rest
+        enc_text = encrypt_data(text) if text else None
+        enc_screenshot = encrypt_data(screenshot) if screenshot else None
+
+        uc = UploadedContent(
             user_id=user.id,
-            provider=prov,
-            external_id=ext,
-            access_token=enc_access,
-            refresh_token=enc_refresh,
-            scopes=scopes,
+            content_type=typ,
+            text=enc_text,
+            screenshot_base64=enc_screenshot,
         )
-        db.add(account)
+        db.add(uc)
+        db.commit()
+        db.refresh(uc)
+
+        results.append({"uploaded_id": uc.id, "type": typ, "analysis": analysis})
+
+    return {"status": "uploaded", "results": results}
+
+
+# =====================================================
+# ⛔ DELETE MY DATA
+# =====================================================
+@router.post("/delete-data")
+def delete_my_data(request: Request, db: Session = Depends(get_db)):
+    """Delete all user's uploaded data and emotion history."""
+    user = _resolve_user_from_request(request, db)
+
+    # Count records for audit
+    ec = db.query(EmotionHistory).filter(EmotionHistory.user_id == user.id).count()
+    uc_count = db.query(UploadedContent).filter(UploadedContent.user_id == user.id).count()
+
+    # Delete data
+    db.query(EmotionHistory).filter(EmotionHistory.user_id == user.id).delete()
+    db.query(UploadedContent).filter(UploadedContent.user_id == user.id).delete()
+
+    # Record audit log
+    details = f"deleted_emotion_history={ec};deleted_uploaded_content={uc_count}"
+    log = AuditLog(user_id=user.id, action="delete_data", details=details)
+    db.add(log)
 
     db.commit()
-    return {"status": "connected", "provider": prov}
+
+    return {"status": "deleted", "user_id": user.id}
 
 
 # =====================================================
-# 📄 LIST ACCOUNTS
+# 📜 AUDIT LOGS
 # =====================================================
-@router.get("/accounts")
-def list_accounts(request: Request, db: Session = Depends(get_db)):
+@router.get("/audit-logs")
+def get_audit_logs(request: Request, db: Session = Depends(get_db)):
+    """Retrieve user's audit logs (consent + deletion history)."""
     user = _resolve_user_from_request(request, db)
 
-    accounts = db.query(SocialAccount).filter(
-        SocialAccount.user_id == user.id
-    ).all()
+    logs = (
+        db.query(AuditLog)
+        .filter(AuditLog.user_id == user.id)
+        .order_by(AuditLog.timestamp.desc())
+        .all()
+    )
 
     return [
-        {
-            "id": a.id,
-            "provider": a.provider,
-            "external_id": a.external_id,
-            "last_synced": a.last_synced,
-            "scopes": a.scopes,
-        }
-        for a in accounts
+        {"id": l.id, "action": l.action, "details": l.details, "timestamp": l.timestamp}
+        for l in logs
     ]
 
 
 # =====================================================
-# 📋 LIST CONNECTED PROVIDERS
+# 📦 GET UPLOADS (list decrypted content for user)
 # =====================================================
-@router.get("/connected")
-def get_connected(request: Request, db: Session = Depends(get_db)):
+@router.get("/uploads")
+def get_uploads(request: Request, db: Session = Depends(get_db)):
+    """Return user's uploaded content with decrypted text/screenshot."""
     user = _resolve_user_from_request(request, db)
 
-    accounts = db.query(SocialAccount).filter(
-        SocialAccount.user_id == user.id
-    ).all()
-
-    return [a.provider for a in accounts]
-
-
-# =====================================================
-# 🔐 OAUTH URL (FIXED FOR SWAGGER)
-# =====================================================
-@router.get("/oauth-url/{provider}")
-def get_oauth_url(
-    provider: str,
-    request: Request,
-    client_redirect: str = "myapp://oauth-success",
-    token: str = Security(oauth2_scheme),  # 👈 THIS FIXES 401
-):
-    # Reconstruct Authorization header for your existing logic
-    request.headers.__dict__["_list"].append(
-        (
-            b"authorization",
-            f"Bearer {token}".encode(),
-        )
+    rows = (
+        db.query(UploadedContent)
+        .filter(UploadedContent.user_id == user.id)
+        .order_by(UploadedContent.created_at.desc())
+        .all()
     )
 
-    auth = request.headers.get("authorization") or request.headers.get("Authorization")
+    out = []
+    for r in rows:
+        try:
+            text = decrypt_data(r.text) if r.text else None
+        except Exception:
+            text = None
 
-    if not auth:
-        raise HTTPException(status_code=401, detail="Missing authorization header")
+        try:
+            screenshot = decrypt_data(r.screenshot_base64) if r.screenshot_base64 else None
+        except Exception:
+            screenshot = None
 
-    parts = auth.split()
+        out.append({
+            "id": r.id,
+            "content_type": r.content_type,
+            "text": text,
+            "screenshot_base64": screenshot,
+            "created_at": r.created_at,
+        })
 
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        raise HTTPException(status_code=401, detail="Invalid authorization header")
-
-    token = parts[1]
-
-    base = str(request.base_url).rstrip("/")
-    callback_url = f"{base}/oauth/{provider}/callback"
-
-    state_raw = f"{client_redirect}|{token}"
-    state = base64.urlsafe_b64encode(state_raw.encode()).decode()
-
-    try:
-        if provider == "instagram":
-            url = instagram.authorize_url(redirect_uri=callback_url, state=state)
-        elif provider == "facebook":
-            url = facebook.authorize_url(redirect_uri=callback_url, state=state)
-        elif provider == "x":
-            url = x_provider.authorize_url(redirect_uri=callback_url, state=state)
-        else:
-            raise HTTPException(status_code=400, detail="Unknown provider")
-
-        return {"url": url}
-
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=f"Provider not configured: {str(e)}")
-
-
-# =====================================================
-# ❌ DISCONNECT ACCOUNT
-# =====================================================
-@router.post("/disconnect")
-def disconnect_account(request: Request, payload: Dict[str, Any], db: Session = Depends(get_db)):
-    user = _resolve_user_from_request(request, db)
-
-    aid = payload.get("account_id")
-
-    if not aid:
-        raise HTTPException(status_code=400, detail="account_id required")
-
-    acc = db.query(SocialAccount).filter(
-        SocialAccount.id == aid,
-        SocialAccount.user_id == user.id
-    ).first()
-
-    if not acc:
-        raise HTTPException(status_code=404, detail="Account not found")
-
-    db.delete(acc)
-    db.commit()
-
-    return {"status": "disconnected"}
+    return out
