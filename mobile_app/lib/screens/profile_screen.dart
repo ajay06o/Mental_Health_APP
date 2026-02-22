@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import '../services/api_client.dart';
 
 import '../services/predict_service.dart';
 import '../services/auth_service.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -70,6 +74,42 @@ class _ProfileScreenState extends State<ProfileScreen>
       _profileFuture = PredictService.fetchProfile();
     });
   }
+ // ================= IMAGE PICKER =================
+Future<void> _pickImage() async {
+  final picker = ImagePicker();
+
+  final pickedFile = await picker.pickImage(
+    source: ImageSource.gallery,
+    imageQuality: 70,
+  );
+
+  if (pickedFile == null) return;
+
+  try {
+    // ✅ Web + Mobile Safe
+    if (kIsWeb) {
+      await PredictService.uploadProfileImage(pickedFile);
+    } else {
+      await PredictService.uploadProfileImage(
+        File(pickedFile.path),
+      );
+    }
+
+    _refreshProfile();
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Profile picture updated"),
+      ),
+    );
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(e.toString())),
+    );
+  }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -115,7 +155,10 @@ class _ProfileScreenState extends State<ProfileScreen>
 
               final data = snapshot.data ?? {};
 
+              final name = data["name"] ?? "";
               final email = data["email"] ?? "Unknown";
+
+              final displayName = (name.toString().trim().isNotEmpty) ? name : email;
               final totalEntries = data["total_entries"] ?? 0;
               final avgSeverity =
                   (data["avg_severity"] ?? 0).toDouble();
@@ -136,7 +179,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                       CrossAxisAlignment.start,
                   children: [
 
-                    _animatedProfileHeader(email),
+                  _animatedProfileHeader(displayName),
 
                     const SizedBox(height: 30),
 
@@ -206,57 +249,94 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   // ================= Animated Header =================
 
-  Widget _animatedProfileHeader(String email) {
-    return FadeTransition(
-      opacity: _fadeAnimation,
-      child: SlideTransition(
-        position: _slideAnimation,
-        child: ScaleTransition(
-          scale: _scaleAnimation,
-          child: Center(
-            child: Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.white.withOpacity(0.4),
-                        blurRadius: 30,
-                        spreadRadius: 5,
-                      ),
-                    ],
+ Widget _animatedProfileHeader(String displayText) {
+  return FutureBuilder<Map<String, dynamic>>(
+    future: _profileFuture,
+    builder: (context, snapshot) {
+      final data = snapshot.data ?? {};
+      final profileImage = data["profile_image"];
+
+      final imageUrl =
+          (profileImage != null &&
+                  profileImage.toString().isNotEmpty)
+              ? "${ApiClient.baseUrl}$profileImage"
+              : null;
+
+      return FadeTransition(
+        opacity: _fadeAnimation,
+        child: SlideTransition(
+          position: _slideAnimation,
+          child: ScaleTransition(
+            scale: _scaleAnimation,
+            child: Center(
+              child: Column(
+                children: [
+                  GestureDetector(
+                    onTap: _pickImage,
+                    child: Stack(
+                      alignment: Alignment.bottomRight,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.white.withOpacity(0.4),
+                                blurRadius: 30,
+                                spreadRadius: 5,
+                              ),
+                            ],
+                          ),
+                          child: CircleAvatar(
+                            radius: 60,
+                            backgroundColor: Colors.white,
+                            backgroundImage:
+                                imageUrl != null
+                                    ? NetworkImage(imageUrl)
+                                    : null,
+                            child: imageUrl == null
+                                ? const Icon(
+                                    Icons.person,
+                                    size: 50,
+                                    color: Colors.deepPurple,
+                                  )
+                                : null,
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: const BoxDecoration(
+                            color: Colors.deepPurple,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.camera_alt,
+                            size: 18,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  child: Container(
-                    padding: const EdgeInsets.all(22),
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
+                  const SizedBox(height: 16),
+                  Text(
+                    displayText,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
                       color: Colors.white,
                     ),
-                    child: const Icon(
-                      Icons.person,
-                      size: 50,
-                      color: Colors.deepPurple,
-                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  email,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
-      ),
-    );
-  }
+      );
+    },
+  );
+}
 
   Widget _sectionTitle(String title) {
     return Text(

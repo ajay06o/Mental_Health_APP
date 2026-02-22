@@ -1,20 +1,17 @@
-import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:image_picker/image_picker.dart';
 
 import 'api_client.dart';
 import 'auth_service.dart';
 
 class PredictService {
-  // ==============================
-  // 🧠 PREDICT EMOTION (SAFE)
-  // ==============================
+  // =====================================================
+  // 🧠 PREDICT EMOTION
+  // =====================================================
   static Future<Map<String, dynamic>> predictEmotion(String text) async {
     if (text.trim().isEmpty) {
-      return {
-        "emotion": "neutral",
-        "confidence": 0.0,
-        "severity": 1,
-        "timestamp": DateTime.now().toIso8601String(),
-      };
+      return _safePredictFallback();
     }
 
     try {
@@ -23,10 +20,9 @@ class PredictService {
         throw Exception("User not authenticated");
       }
 
-      // ApiClient.post returns parsed JSON (decoded body) or throws.
       final decoded = await ApiClient.post(
         "/predict",
-        {"text": text},
+        {"text": text.trim()},
       );
 
       if (decoded is Map<String, dynamic>) {
@@ -36,7 +32,8 @@ class PredictService {
               ? (decoded["confidence"] as num).toDouble()
               : 0.5,
           "severity": decoded["severity"] ?? 1,
-          "timestamp": decoded["timestamp"] ?? DateTime.now().toIso8601String(),
+          "timestamp":
+              decoded["timestamp"] ?? DateTime.now().toIso8601String(),
         };
       }
 
@@ -55,9 +52,9 @@ class PredictService {
     };
   }
 
-  // ==============================
+  // =====================================================
   // 📜 FETCH HISTORY
-  // ==============================
+  // =====================================================
   static Future<List<Map<String, dynamic>>> fetchHistory() async {
     try {
       final token = await AuthService.getAccessToken();
@@ -77,35 +74,9 @@ class PredictService {
     }
   }
 
-  // ==============================
-  // 🔎 SEMANTIC SEARCH (OPTIONAL)
-  // ==============================
-  static Future<List<Map<String, dynamic>>> semanticSearch(
-      String query) async {
-    if (query.trim().isEmpty) return [];
-
-    try {
-      final token = await AuthService.getAccessToken();
-      if (token == null) return [];
-
-      final decoded = await ApiClient.post(
-        "/semantic-search",
-        {"query": query},
-      );
-
-      if (decoded is List) {
-        return decoded.cast<Map<String, dynamic>>();
-      }
-
-      return [];
-    } catch (_) {
-      return [];
-    }
-  }
-
-  // ==============================
+  // =====================================================
   // 👤 FETCH PROFILE
-  // ==============================
+  // =====================================================
   static Future<Map<String, dynamic>> fetchProfile() async {
     try {
       final token = await AuthService.getAccessToken();
@@ -125,54 +96,86 @@ class PredictService {
     }
   }
 
- // ==============================
-// ✏️ UPDATE PROFILE (FULL SUPPORT)
-// ==============================
-static Future<bool> updateProfile({
-  String? name,
-  String? email,
-  String? password,
-  String? emergencyName,
-  String? emergencyEmail,
-  bool? alertsEnabled,
-}) async {
-  try {
-    final token = await AuthService.getAccessToken();
-    if (token == null) {
-      throw Exception("User not authenticated");
+  // =====================================================
+  // ✏️ UPDATE PROFILE
+  // =====================================================
+  static Future<bool> updateProfile({
+    String? name,
+    String? email,
+    String? password,
+    String? emergencyName,
+    String? emergencyEmail,
+    bool? alertsEnabled,
+  }) async {
+    try {
+      final token = await AuthService.getAccessToken();
+      if (token == null) {
+        throw Exception("User not authenticated");
+      }
+
+      final Map<String, dynamic> body = {};
+
+      if (name != null && name.trim().isNotEmpty) {
+        body["name"] = name.trim();
+      }
+
+      if (email != null && email.trim().isNotEmpty) {
+        body["email"] = email.trim();
+      }
+
+      if (password != null && password.trim().isNotEmpty) {
+        body["password"] = password.trim();
+      }
+
+      if (emergencyName != null &&
+          emergencyName.trim().isNotEmpty) {
+        body["emergency_name"] = emergencyName.trim();
+      }
+
+      if (emergencyEmail != null &&
+          emergencyEmail.trim().isNotEmpty) {
+        body["emergency_email"] = emergencyEmail.trim();
+      }
+
+      if (alertsEnabled != null) {
+        body["alerts_enabled"] = alertsEnabled;
+      }
+
+      if (body.isEmpty) {
+        return true;
+      }
+
+      await ApiClient.put("/profile", body);
+
+      return true;
+    } catch (e) {
+      throw Exception(e.toString());
     }
-
-    final Map<String, dynamic> body = {};
-
-    if (name != null && name.isNotEmpty) {
-      body["name"] = name;
-    }
-
-    if (email != null && email.isNotEmpty) {
-      body["email"] = email;
-    }
-
-    if (password != null && password.isNotEmpty) {
-      body["password"] = password;
-    }
-
-    if (emergencyName != null) {
-      body["emergency_name"] = emergencyName;
-    }
-
-    if (emergencyEmail != null) {
-      body["emergency_email"] = emergencyEmail;
-    }
-
-    if (alertsEnabled != null) {
-      body["alerts_enabled"] = alertsEnabled;
-    }
-
-    await ApiClient.put("/profile", body);
-
-    return true;
-  } catch (e) {
-    throw Exception(e.toString());
   }
-}
+
+  // =====================================================
+  // 🖼 UPLOAD PROFILE IMAGE (WEB + MOBILE SAFE)
+  // =====================================================
+  static Future<String?> uploadProfileImage(dynamic image) async {
+    try {
+      final token = await AuthService.getAccessToken();
+      if (token == null) {
+        throw Exception("User not authenticated");
+      }
+
+      final decoded = await ApiClient.multipart(
+        "/profile/upload-image",
+        file: image,
+        fieldName: "file",
+      );
+
+      if (decoded is Map<String, dynamic>) {
+        return decoded["profile_image"];
+      }
+
+      return null;
+    } catch (e) {
+      throw Exception("Image upload failed: $e");
+    }
+  }
 }

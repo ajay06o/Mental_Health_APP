@@ -25,7 +25,7 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    # 👤 NEW: Full Name
+    # 👤 Full Name
     name = Column(
         String(255),
         nullable=True,
@@ -41,6 +41,12 @@ class User(Base):
     password = Column(
         String(255),
         nullable=False,
+    )
+
+    # 🖼 Profile Image URL (stores "/uploads/user_1.jpg")
+    profile_image = Column(
+        String(500),
+        nullable=True,
     )
 
     emergency_email = Column(
@@ -65,6 +71,7 @@ class User(Base):
         nullable=False,
     )
 
+    # Relationship with Emotion History
     emotions = relationship(
         "EmotionHistory",
         back_populates="user",
@@ -89,13 +96,30 @@ class EmotionHistory(Base):
         index=True,
     )
 
-    platform = Column(String(50), default="manual", nullable=False)
+    platform = Column(
+        String(50),
+        default="manual",
+        nullable=False,
+    )
 
     emotion = Column(String(50), nullable=False)
-    confidence = Column(Float, nullable=False, default=0.0)
-    severity = Column(Integer, nullable=False, default=1)
 
-    text = Column(Text, nullable=True)
+    confidence = Column(
+        Float,
+        nullable=False,
+        default=0.0,
+    )
+
+    severity = Column(
+        Integer,
+        nullable=False,
+        default=1,
+    )
+
+    text = Column(
+        Text,
+        nullable=True,
+    )
 
     timestamp = Column(
         DateTime(timezone=True),
@@ -104,7 +128,7 @@ class EmotionHistory(Base):
         index=True,
     )
 
-    user = relationship("User", back_populates="emotions")
-
-
-# Uploaded content and audit log models removed (data/consent feature disabled)
+    user = relationship(
+        "User",
+        back_populates="emotions",
+    )

@@ -1,7 +1,9 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:async';
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import 'auth_service.dart';
 
 class ApiClient {
@@ -22,14 +24,10 @@ class ApiClient {
   static const Duration _defaultTimeout =
       Duration(seconds: 60);
 
-  static const Duration _predictTimeout =
-      Duration(seconds: 120);
-
   static final http.Client _client = http.Client();
 
   static Future<String?>? _refreshFuture;
 
-  /// Called when session completely expires
   static Function()? onSessionExpired;
 
   // =================================================
@@ -44,7 +42,7 @@ class ApiClient {
   }
 
   // =================================================
-  // 🧾 HEADERS (STRICT AUTH)
+  // 🧾 HEADERS
   // =================================================
   static Future<Map<String, String>> _headers({
     bool json = true,
@@ -83,26 +81,22 @@ class ApiClient {
   // =================================================
   static Future<http.Response> _safeRequest(
     Future<http.Response> Function() request, {
-    Duration? timeout,
     bool retrying = false,
   }) async {
     try {
       final response =
-          await request().timeout(timeout ?? _defaultTimeout);
+          await request().timeout(_defaultTimeout);
 
-      // If NOT 401 → return normally
       if (response.statusCode != 401) {
         return response;
       }
 
-      // Already retried once → logout
       if (retrying) {
         await _handleSessionExpired();
         throw ApiException(
             "Session expired. Please login again.");
       }
 
-      // Try refreshing token
       final newToken = await _refreshTokenQueued();
 
       if (newToken == null) {
@@ -111,25 +105,18 @@ class ApiClient {
             "Session expired. Please login again.");
       }
 
-      // Retry original request with new token
       return await _safeRequest(
         request,
-        timeout: timeout,
         retrying: true,
       );
-    } on TimeoutException {
-      throw ApiException(
-          "Server is waking up. Please wait...");
-    } on SocketException {
-      throw ApiException("No internet connection.");
     } catch (e) {
       if (e is ApiException) rethrow;
-      throw ApiException("Unexpected error occurred.");
+      throw ApiException("Network error occurred.");
     }
   }
 
   // =================================================
-  // 🔁 REFRESH TOKEN (QUEUE SAFE)
+  // 🔁 TOKEN REFRESH
   // =================================================
   static Future<String?> _refreshTokenQueued() {
     _refreshFuture ??= _refreshToken();
@@ -176,9 +163,6 @@ class ApiClient {
     }
   }
 
-  // =================================================
-  // 🔄 SESSION EXPIRED
-  // =================================================
   static Future<void> _handleSessionExpired() async {
     await AuthService.logout();
     onSessionExpired?.call();
@@ -218,13 +202,14 @@ class ApiClient {
   }
 
   // =================================================
-  // 🌐 PUBLIC METHODS
+  // 🌐 PUBLIC (NO AUTH) METHODS
   // =================================================
   static Future<dynamic> getPublic(String endpoint) async {
     final response = await _client.get(
       Uri.parse("$baseUrl$endpoint"),
       headers: await _headers(),
     );
+
     return _parseResponse(response);
   }
 
@@ -237,6 +222,7 @@ class ApiClient {
       headers: await _headers(),
       body: jsonEncode(body),
     );
+
     return _parseResponse(response);
   }
 
@@ -252,6 +238,7 @@ class ApiClient {
       ),
       body: body,
     );
+
     return _parseResponse(response);
   }
 
@@ -311,34 +298,50 @@ class ApiClient {
   }
 
   // =================================================
-  // 🧠 PREDICT (LONG RUN SAFE)
+  // 🖼 MULTIPART UPLOAD (WEB + MOBILE SAFE)
   // =================================================
-  static Future<dynamic> predict(
-    Map<String, dynamic> body,
-  ) async {
-    final response = await _safeRequest(
-      () async {
-        return _client.post(
-          Uri.parse("$baseUrl/predict"),
-          headers: await _headers(withAuth: true),
-          body: jsonEncode(body),
-        );
-      },
-      timeout: _predictTimeout,
-    );
+  static Future<dynamic> multipart(
+    String endpoint, {
+    required dynamic file,
+    required String fieldName,
+  }) async {
+    final token = await AuthService.getAccessToken();
+    if (token == null || token.isEmpty) {
+      throw ApiException("No access token found.");
+    }
+
+    final uri = Uri.parse("$baseUrl$endpoint");
+    final request = http.MultipartRequest("POST", uri);
+
+    request.headers["Authorization"] = "Bearer $token";
+
+    if (kIsWeb) {
+      final XFile xFile = file;
+      final bytes = await xFile.readAsBytes();
+
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          fieldName,
+          bytes,
+          filename: xFile.name,
+        ),
+      );
+    } else {
+      final File mobileFile = file;
+
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          fieldName,
+          mobileFile.path,
+        ),
+      );
+    }
+
+    final streamedResponse = await request.send();
+    final response =
+        await http.Response.fromStream(streamedResponse);
 
     return _parseResponse(response);
-  }
-
-  // =================================================
-  // 🗂 Uploads
-  // =================================================
-  static Future<dynamic> uploadContent(List<Map<String, dynamic>> items) async {
-    return await post('/social/upload', {'items': items});
-  }
-
-  static Future<dynamic> getUploads() async {
-    return await get('/social/uploads');
   }
 
   // =================================================
@@ -349,9 +352,6 @@ class ApiClient {
   }
 }
 
-// =================================================
-// 🚨 CUSTOM EXCEPTION
-// =================================================
 class ApiException implements Exception {
   final String message;
 

@@ -4,7 +4,7 @@
 import os
 import sys
 import logging
-from contextlib import asynccontextmanager
+import shutil
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(BASE_DIR)
@@ -15,10 +15,17 @@ if PROJECT_ROOT not in sys.path:
 # =====================================================
 # IMPORTS
 # =====================================================
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import (
+    FastAPI,
+    Depends,
+    HTTPException,
+    UploadFile,
+    File,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -30,7 +37,7 @@ from schemas import (
     TokenResponse,
     EmotionCreate,
     RefreshTokenRequest,
-    ProfileUpdate,   # 👈 ADD THIS
+    ProfileUpdate,
 )
 from security import (
     hash_password,
@@ -41,10 +48,8 @@ from security import (
     verify_refresh_token,
 )
 
-# social routes removed (data/consent feature disabled)
 from ai_models.mental_health_model import final_prediction
 import models
-# from routes.webhooks import router as webhooks_router  # DEPRECATED: social scraping removed
 
 # =====================================================
 # LOGGER
@@ -59,24 +64,24 @@ models.Base.metadata.create_all(bind=engine)
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="8.0.0",
+    version="9.0.0",
 )
 
-# Social routes removed (consent/upload endpoints disabled)
-# OAuth routes deprecated: provider OAuth has been removed in favor of explicit uploads
-# app.include_router(oauth_router)
-# app.include_router(webhooks_router)  # DEPRECATED: webhooks removed
+# =====================================================
+# 📁 PROFILE IMAGE UPLOAD CONFIG
+# =====================================================
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 # =====================================================
-# ROOT (Fix 404 at /)
+# ROOT
 # =====================================================
 @app.get("/")
 def root():
     return {"status": "Backend Running 🚀"}
 
-# =====================================================
-# HEALTH CHECK
-# =====================================================
 @app.get("/health")
 def health():
     return {"status": "healthy"}
@@ -93,7 +98,7 @@ async def global_exception_handler(request, exc):
     )
 
 # =====================================================
-# CORS (Production Safe)
+# CORS
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
@@ -170,22 +175,6 @@ def login(
     )
 
 # =====================================================
-# REFRESH TOKEN
-# =====================================================
-@app.post("/refresh", response_model=TokenResponse)
-def refresh(payload: RefreshTokenRequest):
-    email = verify_refresh_token(payload.refresh_token)
-
-    if not email:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
-
-    return TokenResponse(
-        access_token=create_access_token({"sub": email}),
-        refresh_token=create_refresh_token({"sub": email}),
-        token_type="bearer",
-    )
-
-# =====================================================
 # PROFILE
 # =====================================================
 @app.get("/profile")
@@ -207,13 +196,12 @@ def profile(
 
     return {
         "user_id": user.id,
-        "name": user.name,  # 👈 NEW
+        "name": user.name,
         "email": user.email,
+        "profile_image": user.profile_image,
         "total_entries": total_entries,
         "avg_severity": float(avg_severity or 0),
         "high_risk": (avg_severity or 0) >= 3.5,
-
-        # 🔥 Emergency system fields
         "emergency_email": user.emergency_email,
         "emergency_name": user.emergency_name,
         "alerts_enabled": user.alerts_enabled,
@@ -228,20 +216,15 @@ def update_profile(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-
-    # 👤 Update Name
     if profile.name is not None:
         user.name = profile.name
 
-    # 📧 Update Email
     if profile.email is not None:
         user.email = profile.email
 
-    # 🔐 Update Password
     if profile.password is not None:
         user.password = hash_password(profile.password)
 
-    # 🚨 Emergency Fields
     if profile.emergency_name is not None:
         user.emergency_name = profile.emergency_name
 
@@ -256,6 +239,32 @@ def update_profile(
 
     return {"message": "Profile updated successfully"}
 
+# =====================================================
+# 🖼 UPLOAD PROFILE IMAGE
+# =====================================================
+@app.post("/profile/upload-image")
+def upload_profile_image(
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Invalid image file")
+
+    file_extension = file.filename.split(".")[-1].lower()
+    filename = f"user_{user.id}.{file_extension}"
+    file_path = os.path.join(UPLOAD_DIR, filename)
+
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    image_url = f"/uploads/{filename}"
+
+    user.profile_image = image_url
+    db.commit()
+    db.refresh(user)
+
+    return {"profile_image": image_url}
 
 # =====================================================
 # HISTORY
@@ -283,7 +292,7 @@ def history(
     ]
 
 # =====================================================
-# PREDICT (FIXED — HYBRID LOGIC)
+# PREDICT
 # =====================================================
 @app.post("/predict")
 def predict(
@@ -296,7 +305,6 @@ def predict(
 
     text = data.text.strip().lower()
 
-    # 🔥 Smart keyword override for short single-word inputs
     keyword_map = {
         "happy": "happy",
         "sad": "sad",
@@ -314,11 +322,9 @@ def predict(
         emotion = result.get("final_mental_state", "neutral")
         confidence = float(result.get("confidence", 0.0))
 
-        # If model confidence too low, keep neutral
         if confidence < 0.4:
             emotion = "neutral"
 
-    # 🎯 Improved severity logic
     if emotion == "suicidal":
         severity = 5
     elif emotion in ["depression", "angry", "anxiety"]:
