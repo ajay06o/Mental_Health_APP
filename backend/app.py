@@ -248,13 +248,25 @@ def upload_profile_image(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Invalid image file")
+
+    # ✅ Validate by extension instead of content_type
+    allowed_extensions = ["jpg", "jpeg", "png", "webp"]
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Invalid file")
 
     file_extension = file.filename.split(".")[-1].lower()
+
+    if file_extension not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail="Only JPG, JPEG, PNG, WEBP images allowed",
+        )
+
     filename = f"user_{user.id}.{file_extension}"
     file_path = os.path.join(UPLOAD_DIR, filename)
 
+    # Save file safely
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
