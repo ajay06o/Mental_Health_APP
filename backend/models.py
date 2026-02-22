@@ -25,6 +25,12 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
+    # 👤 NEW: Full Name
+    name = Column(
+        String(255),
+        nullable=True,
+    )
+
     email = Column(
         String(255),
         unique=True,
@@ -37,10 +43,21 @@ class User(Base):
         nullable=False,
     )
 
-    emergency_email = Column(String(255), nullable=True)
-    emergency_name = Column(String(255), nullable=True)
+    emergency_email = Column(
+        String(255),
+        nullable=True,
+    )
 
-    alerts_enabled = Column(Boolean, default=False, nullable=False)
+    emergency_name = Column(
+        String(255),
+        nullable=True,
+    )
+
+    alerts_enabled = Column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
 
     created_at = Column(
         DateTime(timezone=True),

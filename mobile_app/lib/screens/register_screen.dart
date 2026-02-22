@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -9,12 +10,11 @@ class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
 
   @override
-  State<RegisterScreen> createState() =>
-      _RegisterScreenState();
+  State<RegisterScreen> createState() => _RegisterScreenState();
 }
 
 class _RegisterScreenState extends State<RegisterScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
 
   final _emailController = TextEditingController();
@@ -22,247 +22,203 @@ class _RegisterScreenState extends State<RegisterScreen>
   final _confirmController = TextEditingController();
 
   bool _isLoading = false;
-  bool _showSuccess = false;
-  bool _rememberMe = true;
-
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
+  bool _rememberMe = true;
 
-  late final AnimationController _successController;
-  late final Animation<double> _scaleAnimation;
+  late AnimationController _bgController;
+  late AnimationController _entranceController;
 
-  // =================================================
-  // INIT
-  // =================================================
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
+
   @override
   void initState() {
     super.initState();
-    _successController = AnimationController(
+
+    _bgController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 14),
+    )..repeat(reverse: true);
+
+    _entranceController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 700),
     );
-    _scaleAnimation = CurvedAnimation(
-      parent: _successController,
-      curve: Curves.elasticOut,
+
+    _fadeAnimation =
+        CurvedAnimation(parent: _entranceController, curve: Curves.easeOut);
+
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.08),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _entranceController,
+        curve: Curves.easeOutCubic,
+      ),
     );
+
+    _entranceController.forward();
   }
 
   @override
   void dispose() {
+    _bgController.dispose();
+    _entranceController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmController.dispose();
-    _successController.dispose();
     super.dispose();
   }
 
-  // =================================================
-  // REGISTER FLOW
-  // =================================================
   Future<void> _handleRegister() async {
     if (_isLoading) return;
 
     FocusScope.of(context).unfocus();
-
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
 
-    final email =
-        _emailController.text.trim().toLowerCase();
-    final password =
-        _passwordController.text.trim();
+    final email = _emailController.text.trim().toLowerCase();
+    final password = _passwordController.text.trim();
 
     try {
       final success =
-          await AuthService.registerAndAutoLogin(
-        email,
-        password,
-      );
+          await AuthService.registerAndAutoLogin(email, password);
 
       if (!mounted) return;
 
       if (!success) {
-        _showError(
-            "Unable to create account. Please try again.");
+        _showError("Unable to create account.");
         return;
       }
 
-      await AuthService.saveLoginCredentials(
-        email: email,
-        password: password,
-        rememberMe: _rememberMe,
-      );
-
       HapticFeedback.mediumImpact();
-
-      setState(() => _showSuccess = true);
-      _successController.forward();
-
-      await Future.delayed(
-          const Duration(milliseconds: 1200));
-
-      if (!mounted) return;
-
       context.go("/home");
-    } catch (e) {
-      if (mounted) {
-        _showError(
-            "Something went wrong. Please try again.");
-      }
+    } catch (_) {
+      _showError("Something went wrong.");
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   void _showError(String message) {
-    HapticFeedback.lightImpact();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: Colors.red.shade600,
-      ),
+      SnackBar(content: Text(message)),
     );
   }
 
-  // =================================================
-  // UI
-  // =================================================
   @override
   Widget build(BuildContext context) {
-    final isDark =
-        Theme.of(context).brightness == Brightness.dark;
-
     return Scaffold(
-      body: Stack(
-        children: [
-          Container(
+      body: AnimatedBuilder(
+        animation: _bgController,
+        builder: (_, __) {
+          return Container(
             decoration: BoxDecoration(
-              gradient: isDark
-                  ? const LinearGradient(
-                      colors: [
-                        Color(0xFF1E1E2C),
-                        Color(0xFF2A2A40),
-                      ],
-                    )
-                  : const LinearGradient(
-                      colors: [
-                        Color(0xFF6366F1),
-                        Color(0xFF8B5CF6),
-                      ],
+              gradient: LinearGradient(
+                begin: Alignment(
+                  -1 + _bgController.value * 2,
+                  -1,
+                ),
+                end: Alignment(
+                  1,
+                  1 - _bgController.value * 2,
+                ),
+                colors: const [
+                  Color(0xFF7A6FF0),
+                  Color(0xFF5C9EFF),
+                ],
+              ),
+            ),
+            child: SafeArea(
+              child: Center(
+                child: FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: SlideTransition(
+                    position: _slideAnimation,
+                    child: SingleChildScrollView(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 20),
+                      child: Column(
+                        children: [
+                          const SizedBox(height: 60),
+                          const AppLogo(size: 60),
+                          const SizedBox(height: 20),
+
+                          const Text(
+                            "Create Account 🌿",
+                            style: TextStyle(
+                              fontSize: 30,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            "Start your wellness journey.",
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: Colors.white70,
+                            ),
+                          ),
+
+                          const SizedBox(height: 40),
+
+                          ConstrainedBox(
+                            constraints:
+                                const BoxConstraints(maxWidth: 420),
+                            child: _glassCard(),
+                          ),
+                        ],
+                      ),
                     ),
+                  ),
+                ),
+              ),
             ),
-          ),
-          Center(
-            child: AnimatedSwitcher(
-              duration:
-                  const Duration(milliseconds: 400),
-              child: _showSuccess
-                  ? _successView()
-                  : _formCard(),
-            ),
-          ),
-          if (_isLoading) _loadingOverlay(),
-        ],
+          );
+        },
       ),
     );
   }
 
-  // =================================================
-  // SUCCESS VIEW
-  // =================================================
-  Widget _successView() {
-    return ScaleTransition(
-      scale: _scaleAnimation,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: const [
-          CircleAvatar(
-            radius: 55,
-            backgroundColor: Colors.white,
-            child: Icon(
-              Icons.check_circle,
-              color: Colors.green,
-              size: 70,
-            ),
+  Widget _glassCard() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(28),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 28, vertical: 30),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.82),
+            borderRadius: BorderRadius.circular(28),
           ),
-          SizedBox(height: 22),
-          Text(
-            "Account Created 🎉",
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 26,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          SizedBox(height: 6),
-          Text(
-            "Welcome to your wellness journey 🌱",
-            style: TextStyle(color: Colors.white70),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // =================================================
-  // FORM CARD
-  // =================================================
-  Widget _formCard() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Card(
-        elevation: 20,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(28),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(28),
           child: Form(
             key: _formKey,
             child: Column(
               children: [
-                const Hero(
-                  tag: "auth-hero",
-                  child: AppLogo(size: 64),
-                ),
-                const SizedBox(height: 18),
-                const Text(
-                  "Create Account",
-                  style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 30),
                 _emailField(),
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
                 _passwordField(),
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
                 _confirmField(),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Checkbox(
-                      value: _rememberMe,
-                      onChanged: (v) =>
-                          setState(() =>
-                              _rememberMe = v ?? true),
-                    ),
-                    const Text("Remember me"),
-                  ],
-                ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 14),
+                _rememberRow(),
+                const SizedBox(height: 24),
                 _registerButton(),
                 const SizedBox(height: 12),
                 TextButton(
-                  onPressed: () =>
-                      context.go("/login"),
+                  onPressed: () => context.go("/login"),
                   child: const Text(
-                      "Already have an account? Login"),
+                    "Already have an account? Login",
+                    style: TextStyle(
+                      color: Color(0xFF6D5DF6),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -272,49 +228,53 @@ class _RegisterScreenState extends State<RegisterScreen>
     );
   }
 
-  // =================================================
-  // FIELDS
-  // =================================================
+  Widget _rememberRow() {
+    return Row(
+      children: [
+        Checkbox(
+          value: _rememberMe,
+          activeColor: const Color(0xFF6D5DF6),
+          onChanged: (v) =>
+              setState(() => _rememberMe = v ?? true),
+        ),
+        const SizedBox(width: 6),
+        const Text(
+          "Remember me",
+          style: TextStyle(
+            color: Colors.black87,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _emailField() => TextFormField(
         controller: _emailController,
-        keyboardType:
-            TextInputType.emailAddress,
-        validator: (v) {
-          if (v == null || v.isEmpty) {
-            return "Email required";
-          }
-          if (!RegExp(
-                  r'^[\w-.]+@([\w-]+\.)+[\w-]{2,4}$')
-              .hasMatch(v)) {
-            return "Enter valid email";
-          }
-          return null;
-        },
-        decoration: _inputDecoration(
-          label: "Email",
-          icon: Icons.email_outlined,
-        ),
+        style: const TextStyle(color: Colors.black),
+        decoration: _inputDecoration("Email", Icons.email_outlined),
       );
 
   Widget _passwordField() => TextFormField(
         controller: _passwordController,
         obscureText: _obscurePassword,
-        validator: (v) {
-          if (v == null || v.length < 6) {
-            return "Minimum 6 characters";
-          }
-          return null;
-        },
+        style: const TextStyle(color: Colors.black),
+        validator: (v) =>
+            v != null && v.length >= 6
+                ? null
+                : "Minimum 6 characters",
         decoration: _inputDecoration(
-          label: "Password",
-          icon: Icons.lock_outline,
+          "Password",
+          Icons.lock_outline,
           suffix: IconButton(
-            icon: Icon(_obscurePassword
-                ? Icons.visibility_off
-                : Icons.visibility),
-            onPressed: () => setState(
-                () => _obscurePassword =
-                    !_obscurePassword),
+            icon: Icon(
+              _obscurePassword
+                  ? Icons.visibility_off
+                  : Icons.visibility,
+              color: Colors.black54,
+            ),
+            onPressed: () =>
+                setState(() => _obscurePassword = !_obscurePassword),
           ),
         ),
       );
@@ -322,66 +282,67 @@ class _RegisterScreenState extends State<RegisterScreen>
   Widget _confirmField() => TextFormField(
         controller: _confirmController,
         obscureText: _obscureConfirm,
+        style: const TextStyle(color: Colors.black),
         validator: (v) =>
             v == _passwordController.text
                 ? null
                 : "Passwords do not match",
         decoration: _inputDecoration(
-          label: "Confirm Password",
-          icon: Icons.lock_outline,
+          "Confirm Password",
+          Icons.lock_outline,
           suffix: IconButton(
-            icon: Icon(_obscureConfirm
-                ? Icons.visibility_off
-                : Icons.visibility),
-            onPressed: () => setState(
-                () => _obscureConfirm =
-                    !_obscureConfirm),
+            icon: Icon(
+              _obscureConfirm
+                  ? Icons.visibility_off
+                  : Icons.visibility,
+              color: Colors.black54,
+            ),
+            onPressed: () =>
+                setState(() => _obscureConfirm = !_obscureConfirm),
           ),
         ),
       );
 
   Widget _registerButton() => SizedBox(
         width: double.infinity,
-        height: 52,
+        height: 50,
         child: ElevatedButton(
-          onPressed:
-              _isLoading ? null : _handleRegister,
           style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF6D5DF6),
             shape: RoundedRectangleBorder(
-              borderRadius:
-                  BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(18),
             ),
           ),
-          child: const Text(
-            "Create Account",
-            style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600),
-          ),
+          onPressed: _isLoading ? null : _handleRegister,
+          child: _isLoading
+              ? const CircularProgressIndicator(
+                  color: Colors.white,
+                )
+              : const Text(
+                  "Create Account",
+                  style:
+                      TextStyle(fontWeight: FontWeight.w600),
+                ),
         ),
       );
 
-  Widget _loadingOverlay() => Container(
-        color: Colors.black.withOpacity(0.3),
-        child: const Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-
-  InputDecoration _inputDecoration({
-    required String label,
-    required IconData icon,
+  InputDecoration _inputDecoration(
+    String label,
+    IconData icon, {
     Widget? suffix,
   }) {
     return InputDecoration(
       labelText: label,
-      prefixIcon: Icon(icon),
+      prefixIcon: Icon(icon, color: Colors.black54),
       suffixIcon: suffix,
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding:
+          const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
       border: OutlineInputBorder(
-        borderRadius:
-            BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
       ),
     );
   }
 }
-

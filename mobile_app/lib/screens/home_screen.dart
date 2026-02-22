@@ -1,11 +1,10 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 
 import '../services/predict_service.dart';
 import '../widgets/app_logo.dart';
-
-enum AppLanguage { english, telugu, hindi }
 
 class TrendPoint {
   final String emotion;
@@ -18,112 +17,79 @@ class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() =>
-      _HomeScreenState();
+  State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen>
     with TickerProviderStateMixin {
-  final TextEditingController _controller =
-      TextEditingController();
-
+  final TextEditingController _controller = TextEditingController();
   final List<TrendPoint> _points = [];
 
   bool _loading = false;
   String? _currentEmotion;
-  AppLanguage _language =
-      AppLanguage.english;
 
-  // ==============================
-  // INIT
-  // ==============================
+  late AnimationController _bgController;
+
   @override
   void initState() {
     super.initState();
     _loadHistory();
+
+    _bgController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 16),
+    )..repeat(reverse: true);
   }
 
   @override
   void dispose() {
     _controller.dispose();
+    _bgController.dispose();
     super.dispose();
   }
 
-  // ==============================
-  // AUTO LANGUAGE DETECT
-  // ==============================
-  void _autoDetectLanguage(String text) {
-    if (RegExp(r'[\u0C00-\u0C7F]')
-        .hasMatch(text)) {
-      _language = AppLanguage.telugu;
-    } else if (RegExp(r'[\u0900-\u097F]')
-        .hasMatch(text)) {
-      _language = AppLanguage.hindi;
-    } else {
-      _language = AppLanguage.english;
-    }
-  }
-
-  // ==============================
+  // =============================
   // LOAD HISTORY
-  // ==============================
+  // =============================
   Future<void> _loadHistory() async {
     try {
-      final data =
-          await PredictService.fetchHistory();
+      final data = await PredictService.fetchHistory();
 
       _points
         ..clear()
         ..addAll(data.map(
           (e) => TrendPoint(
             e["emotion"] ?? "unknown",
-            DateTime.tryParse(
-                        e["timestamp"] ?? "")
-                    ?.toUtc() ??
-                DateTime.now().toUtc(),
+            DateTime.tryParse(e["timestamp"] ?? "") ??
+                DateTime.now(),
           ),
         ));
 
-      _points.sort(
-          (a, b) => a.time.compareTo(b.time));
-
+      _points.sort((a, b) => a.time.compareTo(b.time));
       if (mounted) setState(() {});
-    } catch (_) {
-      _showError(
-          "Failed to load history");
-    }
+    } catch (_) {}
   }
 
-  // ==============================
+  // =============================
   // ANALYZE
-  // ==============================
+  // =============================
   Future<void> _analyze() async {
-    final text =
-        _controller.text.trim();
-    if (text.isEmpty ||
-        _loading) return;
+    final text = _controller.text.trim();
+    if (text.isEmpty || _loading) return;
 
-    _autoDetectLanguage(text);
     setState(() => _loading = true);
 
     try {
       final result =
-          await PredictService
-              .predictEmotion(text);
+          await PredictService.predictEmotion(text);
 
-      final emotion =
-          result["emotion"] ??
-              "unknown";
+      final emotion = result["emotion"] ?? "unknown";
 
       _points.add(
         TrendPoint(
           emotion,
-          DateTime.tryParse(
-                      result["timestamp"] ??
-                          "")
-                  ?.toUtc() ??
-              DateTime.now()
-                  .toUtc(),
+          DateTime.tryParse(result["timestamp"] ?? "") ??
+              DateTime.now(),
         ),
       );
 
@@ -134,53 +100,14 @@ class _HomeScreenState extends State<HomeScreen>
         _controller.clear();
         _loading = false;
       });
-
-      _checkCrisis(emotion);
     } catch (_) {
-      if (mounted) {
-        setState(() => _loading = false);
-        _showError(
-            "Analysis failed. Please try again.");
-      }
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  // ==============================
-  // CRISIS ALERT
-  // ==============================
-  void _checkCrisis(String emotion) {
-    if (emotion.toLowerCase() ==
-        "suicidal") {
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text(
-              "🚨 Immediate Support"),
-          content: const Text(
-              "If you are feeling unsafe, please contact a trusted person or emergency service."),
-          actions: [
-            TextButton(
-              onPressed: () =>
-                  Navigator.pop(context),
-              child:
-                  const Text("Close"),
-            ),
-          ],
-        ),
-      );
-    }
-  }
-
-  void _showError(String msg) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: Colors.red,
-      ),
-    );
-  }
-
+  // =============================
+  // SEVERITY
+  // =============================
   double _severity(String emotion) {
     switch (emotion.toLowerCase()) {
       case "happy":
@@ -216,138 +143,180 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  // ==============================
-  // GRAPH
-  // ==============================
-  Widget _graph() {
-    if (_points.length < 2) {
-      return const Expanded(
-        child: Center(
-          child: Text(
-            "No trend data yet",
-            style:
-                TextStyle(color: Colors.grey),
-          ),
-        ),
-      );
+  // =============================
+  // TREND DIRECTION
+  // =============================
+  String _trendDirection() {
+    if (_points.length < 2) return "stable";
+
+    final last = _severity(_points.last.emotion);
+    final prev = _severity(_points[_points.length - 2].emotion);
+
+    if (last > prev) return "worsening";
+    if (last < prev) return "improving";
+    return "stable";
+  }
+
+  Widget _trendIndicator() {
+    if (_points.length < 2) return const SizedBox();
+
+    final trend = _trendDirection();
+
+    IconData icon;
+    Color color;
+    String text;
+
+    switch (trend) {
+      case "improving":
+        icon = Icons.trending_up;
+        color = Colors.green;
+        text = "Improving";
+        break;
+      case "worsening":
+        icon = Icons.trending_down;
+        color = Colors.red;
+        text = "Worsening";
+        break;
+      default:
+        icon = Icons.trending_flat;
+        color = Colors.orange;
+        text = "Stable";
     }
 
-    final spots = List.generate(
-      _points.length,
-      (i) => FlSpot(
-        i.toDouble(),
-        _severity(
-            _points[i].emotion),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Icon(icon, color: color),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
+  }
 
-    return Expanded(
-      child: LineChart(
-        LineChartData(
-          minY: 0.8,
-          maxY: 5.2,
-          gridData: FlGridData(
-            show: true,
-            horizontalInterval: 1,
-          ),
-          lineBarsData: [
-            LineChartBarData(
-              spots: spots,
-              isCurved: true,
-              barWidth: 4,
-              gradient:
-                  const LinearGradient(
-                colors: [
-                  Color(0xFF8B5CF6),
-                  Color(0xFF6366F1),
+  // =============================
+  // UI
+  // =============================
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: AnimatedBuilder(
+        animation: _bgController,
+        builder: (_, __) {
+          return Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment(
+                  -1 + _bgController.value * 2,
+                  -1,
+                ),
+                end: Alignment(
+                  1,
+                  1 - _bgController.value * 2,
+                ),
+                colors: const [
+                  Color(0xFF7A6FF0),
+                  Color(0xFF5C9EFF),
                 ],
               ),
             ),
-          ],
-        ),
-        duration:
-            const Duration(milliseconds: 700),
-      ),
-    );
-  }
+            child: SafeArea(
+              child: Stack(
+                children: [
+                  Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 20),
+                    child: Column(
+                      crossAxisAlignment:
+                          CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 20),
+                        Row(
+                          mainAxisAlignment:
+                              MainAxisAlignment.spaceBetween,
+                          children: const [
+                            Text(
+                              "AI Dashboard 🌿",
+                              style: TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                            AppLogo(size: 32),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
 
-  // ==============================
-  // UI
-  // ==============================
-  @override
-  Widget build(
-      BuildContext context) {
-    final isDark =
-        Theme.of(context).brightness ==
-            Brightness.dark;
+                        _glassInput(),
+                        const SizedBox(height: 14),
+                        _analyzeButton(),
 
-    return Scaffold(
-      appBar: AppBar(
-        title:
-            const Text("AI Dashboard"),
-        actions: const [
-          Padding(
-            padding:
-                EdgeInsets.only(right: 12),
-            child:
-                AppLogo(size: 28),
-          ),
-        ],
-      ),
-      body: Stack(
-        children: [
-          Padding(
-            padding:
-                const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                _inputCard(),
-                const SizedBox(height: 12),
-                _analyzeButton(),
-                const SizedBox(height: 16),
-                if (_currentEmotion !=
-                    null)
-                  _emotionCard(),
-                const SizedBox(height: 16),
-                _graph(),
-              ],
-            ),
-          ),
-          if (_loading)
-            Container(
-              color: Colors.black
-                  .withOpacity(0.3),
-              child:
-                  const Center(
-                child:
-                    CircularProgressIndicator(),
+                        const SizedBox(height: 20),
+
+                        if (_currentEmotion != null)
+                          _emotionCard(),
+
+                        const SizedBox(height: 20),
+
+                        Expanded(child: _graph()),
+                      ],
+                    ),
+                  ),
+                  if (_loading)
+                    Container(
+                      color:
+                          Colors.black.withOpacity(0.3),
+                      child: const Center(
+                        child:
+                            CircularProgressIndicator(
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
-        ],
+          );
+        },
       ),
     );
   }
 
-  Widget _inputCard() {
-    return Card(
-      elevation: 6,
-      shape:
-          RoundedRectangleBorder(
-        borderRadius:
-            BorderRadius.circular(16),
-      ),
-      child: Padding(
-        padding:
-            const EdgeInsets.all(14),
-        child: TextField(
-          controller: _controller,
-          maxLines: 3,
-          decoration:
-              const InputDecoration(
-            hintText:
-                "Share how you feel...",
-            border:
-                InputBorder.none,
+  // =============================
+  // GLASS INPUT
+  // =============================
+  Widget _glassInput() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter:
+            ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        child: Container(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color:
+                Colors.white.withOpacity(0.9),
+            borderRadius:
+                BorderRadius.circular(20),
+          ),
+          child: TextField(
+            controller: _controller,
+            style:
+                const TextStyle(color: Colors.black),
+            maxLines: 3,
+            decoration: const InputDecoration(
+              hintText: "Share how you feel...",
+              border: InputBorder.none,
+            ),
           ),
         ),
       ),
@@ -357,47 +326,329 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _analyzeButton() {
     return SizedBox(
       width: double.infinity,
-      height: 48,
+      height: 50,
       child: ElevatedButton(
-        onPressed:
-            _loading ? null : _analyze,
-        child: const Text("Analyze"),
+        style: ElevatedButton.styleFrom(
+          backgroundColor:
+              const Color(0xFF6D5DF6),
+          shape: RoundedRectangleBorder(
+            borderRadius:
+                BorderRadius.circular(18),
+          ),
+        ),
+        onPressed: _loading ? null : _analyze,
+        child: const Text(
+          "Analyze",
+          style:
+              TextStyle(fontWeight: FontWeight.w600),
+        ),
       ),
     );
   }
 
   Widget _emotionCard() {
-    return AnimatedContainer(
-      duration:
-          const Duration(milliseconds: 400),
-      padding:
-          const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.deepPurple
-            .withOpacity(0.1),
-        borderRadius:
-            BorderRadius.circular(14),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        child: Container(
+          padding:
+              const EdgeInsets.symmetric(
+                  horizontal: 18, vertical: 16),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.97),
+            borderRadius:
+                BorderRadius.circular(18),
+          ),
+          child: Row(
+            children: [
+              Text(
+                _emoji(_currentEmotion!),
+                style:
+                    const TextStyle(fontSize: 30),
+              ),
+              const SizedBox(width: 14),
+              Text(
+                _currentEmotion!
+                    .toUpperCase(),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight:
+                      FontWeight.w700,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
-      child: Row(
-        children: [
-          Text(
-            _emoji(_currentEmotion!),
-            style:
-                const TextStyle(
-              fontSize: 28,
+    );
+  }
+
+  // =============================
+  // GRAPH (FINAL)
+  // =============================
+  Widget _graph() {
+    if (_points.length < 2) {
+      return const Center(
+        child: Text(
+          "No trend data yet",
+          style:
+              TextStyle(color: Colors.white70),
+        ),
+      );
+    }
+
+    final spots = List.generate(
+      _points.length,
+      (i) => FlSpot(
+        i.toDouble(),
+        _severity(_points[i].emotion),
+      ),
+    );
+
+    final lastIndex =
+        _points.length - 1;
+
+    return Column(
+      crossAxisAlignment:
+          CrossAxisAlignment.start,
+      children: [
+        _trendIndicator(),
+
+        Expanded(
+          child: ClipRRect(
+            borderRadius:
+                BorderRadius.circular(20),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(
+                  sigmaX: 15,
+                  sigmaY: 15),
+              child: Container(
+                padding:
+                    const EdgeInsets.fromLTRB(
+                        32, 28, 20, 28),
+                decoration:
+                    BoxDecoration(
+                  color: Colors.white
+                      .withOpacity(0.98),
+                  borderRadius:
+                      BorderRadius.circular(
+                          20),
+                ),
+                child: LineChart(
+                  LineChartData(
+                    minY: 0.8,
+                    maxY: 5.3,
+
+                    titlesData:
+                        FlTitlesData(
+                      leftTitles:
+                          AxisTitles(
+                        sideTitles:
+                            SideTitles(
+                          showTitles:
+                              true,
+                          reservedSize:
+                              44,
+                          interval: 1,
+                          getTitlesWidget:
+                              (value,
+                                  meta) {
+                            const style =
+                                TextStyle(
+                              fontSize:
+                                  18,
+                              color:
+                                  Colors
+                                      .black87,
+                            );
+
+                            switch (value
+                                .toInt()) {
+                              case 1:
+                                return const Text(
+                                    "😊",
+                                    style:
+                                        style);
+                              case 2:
+                                return const Text(
+                                    "😔",
+                                    style:
+                                        style);
+                              case 3:
+                                return const Text(
+                                    "😰",
+                                    style:
+                                        style);
+                              case 4:
+                                return const Text(
+                                    "💔",
+                                    style:
+                                        style);
+                              case 5:
+                                return const Text(
+                                    "🚨",
+                                    style:
+                                        style);
+                              default:
+                                return const SizedBox();
+                            }
+                          },
+                        ),
+                      ),
+                      topTitles:
+                          AxisTitles(
+                        sideTitles:
+                            SideTitles(
+                                showTitles:
+                                    false),
+                      ),
+                      rightTitles:
+                          AxisTitles(
+                        sideTitles:
+                            SideTitles(
+                                showTitles:
+                                    false),
+                      ),
+                      bottomTitles:
+                          AxisTitles(
+                        sideTitles:
+                            SideTitles(
+                                showTitles:
+                                    false),
+                      ),
+                    ),
+
+                    gridData:
+                        FlGridData(
+                      show: true,
+                      drawVerticalLine:
+                          false,
+                      horizontalInterval:
+                          1,
+                      getDrawingHorizontalLine:
+                          (value) {
+                        return FlLine(
+                          color: Colors.grey
+                              .withOpacity(
+                                  0.2),
+                          strokeWidth: 1,
+                        );
+                      },
+                    ),
+
+                    borderData:
+                        FlBorderData(
+                            show: false),
+
+                    lineTouchData:
+                        LineTouchData(
+                      touchTooltipData:
+                          LineTouchTooltipData(
+                        tooltipBgColor:
+                            Colors.black87,
+                        getTooltipItems:
+                            (touchedSpots) {
+                          return touchedSpots
+                              .map((spot) {
+                            final index =
+                                spot.x
+                                    .toInt();
+                            final emotion =
+                                _points[
+                                        index]
+                                    .emotion
+                                    .toUpperCase();
+                            final time =
+                                DateFormat(
+                                        "MMM d, HH:mm")
+                                    .format(
+                                        _points[
+                                                index]
+                                            .time);
+
+                            return LineTooltipItem(
+                              "$emotion\n$time",
+                              const TextStyle(
+                                color: Colors
+                                    .white,
+                                fontWeight:
+                                    FontWeight
+                                        .w600,
+                              ),
+                            );
+                          }).toList();
+                        },
+                      ),
+                    ),
+
+                  lineBarsData: [
+                      LineChartBarData(
+                        spots: spots,
+                        isCurved: true,
+                        barWidth: 3,
+                        color: const Color(
+                            0xFF6D5DF6),
+
+                        dotData:
+                            FlDotData(
+                          show: true,
+                          getDotPainter:
+                              (spot,
+                                  percent,
+                                  bar,
+                                  index) {
+                            if (index ==
+                                lastIndex) {
+                              return FlDotCirclePainter(
+                                radius: 6,
+                                color: const Color(
+                                    0xFF6D5DF6),
+                                strokeWidth:
+                                    4,
+                                strokeColor:
+                                    Colors
+                                        .white,
+                              );
+                            }
+                            return FlDotCirclePainter(
+                              radius: 3,
+                              color: const Color(
+                                  0xFF6D5DF6),
+                            );
+                          },
+                        ),
+
+                        belowBarData:
+                            BarAreaData(
+                          show: true,
+                          gradient:
+                              LinearGradient(
+                            colors: [
+                              const Color(
+                                      0xFF6D5DF6)
+                                  .withOpacity(
+                                      0.15),
+                              Colors
+                                  .transparent,
+                            ],
+                            begin:
+                                Alignment
+                                    .topCenter,
+                            end: Alignment
+                                .bottomCenter,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
-          const SizedBox(width: 12),
-          Text(
-            _currentEmotion!,
-            style: const TextStyle(
-              fontWeight:
-                  FontWeight.bold,
-              fontSize: 16,
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

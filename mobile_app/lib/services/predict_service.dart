@@ -125,46 +125,54 @@ class PredictService {
     }
   }
 
-  // ==============================
-  // ✏️ UPDATE PROFILE (FULL SUPPORT)
-  // ==============================
-  static Future<bool> updateProfile({
-    required String email,
-    String? password,
-    String? emergencyName,
-    String? emergencyEmail,
-    bool? alertsEnabled,
-  }) async {
-    try {
-      final token = await AuthService.getAccessToken();
-      if (token == null) {
-        throw Exception("User not authenticated");
-      }
-
-      final Map<String, dynamic> body = {
-        "email": email,
-      };
-
-      if (password != null && password.isNotEmpty) {
-        body["password"] = password;
-      }
-
-      if (emergencyName != null) {
-        body["emergency_name"] = emergencyName;
-      }
-
-      if (emergencyEmail != null) {
-        body["emergency_email"] = emergencyEmail;
-      }
-
-      if (alertsEnabled != null) {
-        body["alerts_enabled"] = alertsEnabled;
-      }
-
-      await ApiClient.put("/profile", body);
-      return true;
-    } catch (e) {
-      throw Exception(e.toString());
+ // ==============================
+// ✏️ UPDATE PROFILE (FULL SUPPORT)
+// ==============================
+static Future<bool> updateProfile({
+  String? name,
+  String? email,
+  String? password,
+  String? emergencyName,
+  String? emergencyEmail,
+  bool? alertsEnabled,
+}) async {
+  try {
+    final token = await AuthService.getAccessToken();
+    if (token == null) {
+      throw Exception("User not authenticated");
     }
+
+    final Map<String, dynamic> body = {};
+
+    if (name != null && name.isNotEmpty) {
+      body["name"] = name;
+    }
+
+    if (email != null && email.isNotEmpty) {
+      body["email"] = email;
+    }
+
+    if (password != null && password.isNotEmpty) {
+      body["password"] = password;
+    }
+
+    if (emergencyName != null) {
+      body["emergency_name"] = emergencyName;
+    }
+
+    if (emergencyEmail != null) {
+      body["emergency_email"] = emergencyEmail;
+    }
+
+    if (alertsEnabled != null) {
+      body["alerts_enabled"] = alertsEnabled;
+    }
+
+    await ApiClient.put("/profile", body);
+
+    return true;
+  } catch (e) {
+    throw Exception(e.toString());
   }
+}
 }

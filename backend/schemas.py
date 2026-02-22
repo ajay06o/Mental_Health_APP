@@ -144,6 +144,10 @@ class SocialAnalysisResponse(BaseModel):
 
 class ProfileResponse(BaseModel):
     user_id: int
+
+    # 👤 NEW: Name field
+    name: Optional[str] = None
+
     email: EmailStr
     total_entries: int
     avg_severity: float
@@ -156,10 +160,19 @@ class ProfileResponse(BaseModel):
 
 
 class ProfileUpdate(BaseModel):
+
+    # 👤 NEW: Name support
+    name: Optional[str] = Field(
+        None,
+        max_length=255,
+        example="John Doe",
+    )
+
     email: Optional[EmailStr] = Field(
         None,
         example="newemail@gmail.com",
     )
+
     password: Optional[str] = Field(
         None,
         min_length=6,
@@ -172,15 +185,28 @@ class ProfileUpdate(BaseModel):
         None,
         example="parent@gmail.com",
     )
+
     emergency_name: Optional[str] = Field(
         None,
         max_length=100,
         example="Mother",
     )
+
     alerts_enabled: Optional[bool] = Field(
         None,
         example=True,
     )
+
+    # ==========================
+    # VALIDATORS
+    # ==========================
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value):
+        if value:
+            return value.strip()
+        return value
 
     @field_validator("email")
     @classmethod

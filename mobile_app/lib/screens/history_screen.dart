@@ -1,6 +1,7 @@
+import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:intl/intl.dart';
 import '../services/predict_service.dart';
 
 const Map<String, List<String>> emotionSynonyms = {
@@ -20,282 +21,339 @@ class HistoryScreen extends StatefulWidget {
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
-  static const _filterKey = "history_filter";
-  static const _searchKey = "history_search";
-
   List<Map<String, dynamic>> _allHistory = [];
-  List<Map<String, dynamic>> _semanticResults = [];
-
   bool _loading = true;
-  bool _semanticLoading = false;
-  bool _semanticMode = false;
 
-  String _selectedEmotion = "all";
   String _searchText = "";
-
   final TextEditingController _searchController = TextEditingController();
+  Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
-    _restoreState();
     _loadHistory();
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
 
-  // ===============================
-  // STATE
-  // ===============================
-  Future<void> _restoreState() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _selectedEmotion = prefs.getString(_filterKey) ?? "all";
-      _searchText = prefs.getString(_searchKey) ?? "";
-      _searchController.text = _searchText;
-    });
-  }
-
-  Future<void> _persistState() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_filterKey, _selectedEmotion);
-    await prefs.setString(_searchKey, _searchText);
-  }
-
-  // ===============================
-  // LOAD HISTORY
-  // ===============================
   Future<void> _loadHistory() async {
     setState(() => _loading = true);
-
     try {
       final data = await PredictService.fetchHistory();
       if (!mounted) return;
-
       setState(() {
         _allHistory = data;
         _loading = false;
       });
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       setState(() => _loading = false);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
     }
   }
 
   // ===============================
-  // FILTER
+  // 🔍 Debounced Search
   // ===============================
+
+  void _onSearchChanged(String value) {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      setState(() {
+        _searchText = value;
+      });
+    });
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    setState(() => _searchText = "");
+  }
+
+  // ===============================
+  // Smart Filter
+  // ===============================
+
   List<Map<String, dynamic>> get filteredHistory {
-    final keywords = _searchText.toLowerCase().split(RegExp(r'\s+'));
+    final search = _searchText.trim().toLowerCase();
 
-    return _allHistory.where((h) {
-      final emotion = h["emotion"].toString().toLowerCase();
-      final synonyms = emotionSynonyms[emotion]?.join(" ") ?? "";
+    if (search.isEmpty) return _allHistory;
+    if (search.length < 2) return [];
 
-      final searchable =
-          "$emotion $synonyms ${h["severity"]} ${h["confidence"]}".toLowerCase();
+    return _allHistory.where((item) {
+      final emotion = item["emotion"].toString().toLowerCase();
+      final synonyms = emotionSynonyms[emotion] ?? [];
 
-      if (_selectedEmotion != "all" && emotion != _selectedEmotion) {
-        return false;
+      if (emotion.startsWith(search)) return true;
+
+      if (synonyms.any((e) => e.toLowerCase().startsWith(search))) {
+        return true;
       }
 
-      for (final k in keywords) {
-        if (k.isNotEmpty && !searchable.contains(k)) return false;
-      }
-
-      return true;
+      return false;
     }).toList();
   }
 
-  // ===============================
-  // SEMANTIC SEARCH
-  // ===============================
-  Future<void> _runSemanticSearch() async {
-    if (_searchText.trim().isEmpty) return;
-
-    setState(() => _semanticLoading = true);
-
-    try {
-      final results = await PredictService.semanticSearch(_searchText);
-      if (!mounted) return;
-
-      setState(() {
-        _semanticResults = results;
-        _semanticLoading = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-
-      setState(() {
-        _semanticResults = [];
-        _semanticLoading = false;
-      });
-    }
-  }
-
-  // ===============================
-  // EMOTION COLOR
-  // ===============================
-  Color _emotionColor(String emotion) {
-    switch (emotion) {
-      case "happy":
-        return Colors.green;
-      case "sad":
-        return Colors.blue;
-      case "anxiety":
-        return Colors.orange;
-      case "angry":
-        return Colors.red;
-      case "depression":
-        return Colors.deepPurple;
-      case "suicidal":
-        return Colors.black87;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  // ===============================
-  // UI
-  // ===============================
   @override
   Widget build(BuildContext context) {
-    final history = _semanticMode ? _semanticResults : filteredHistory;
+    final history = filteredHistory;
 
     return Scaffold(
-      appBar: AppBar(title: const Text("History")),
-      body: RefreshIndicator(
-        onRefresh: _loadHistory,
-        child: Column(
-          children: [
-            _buildSearchSection(),
-            _buildEmotionChips(),
-            Expanded(
-              child: (_loading || _semanticLoading)
-                  ? const Center(child: CircularProgressIndicator())
-                  : history.isEmpty
-                      ? const Center(child: Text("No records found"))
-                      : ListView.builder(
-                          padding: const EdgeInsets.all(16),
-                          itemCount: history.length,
-                          itemBuilder: (_, i) {
-                            final h = history[i];
-                            final emotion =
-                                h["emotion"].toString().toLowerCase();
-
-                            return Card(
-                              elevation: 6,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              margin:
-                                  const EdgeInsets.only(bottom: 16),
-                              child: ListTile(
-                                contentPadding:
-                                    const EdgeInsets.all(16),
-                                title: Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 10, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: _emotionColor(emotion)
-                                            .withOpacity(0.15),
-                                        borderRadius:
-                                            BorderRadius.circular(20),
-                                      ),
-                                      child: Text(
-                                        emotion.toUpperCase(),
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          color:
-                                              _emotionColor(emotion),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                subtitle: Padding(
-                                  padding:
-                                      const EdgeInsets.only(top: 8),
-                                  child: Text(
-                                    "Confidence: ${(h["confidence"] * 100).toStringAsFixed(1)}%  |  Severity: ${h["severity"]}",
-                                  ),
-                                ),
-                                trailing: _semanticMode
-                                    ? const Icon(
-                                        Icons.auto_awesome,
-                                        color: Colors.deepPurple,
-                                      )
-                                    : null,
-                              ),
-                            );
-                          },
-                        ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSearchSection() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: TextField(
-        controller: _searchController,
-        decoration: InputDecoration(
-          hintText: "Search emotion or meaning...",
-          prefixIcon: const Icon(Icons.search),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(20),
+      backgroundColor: Colors.transparent,
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF7A6FF0), Color(0xFF5C9EFF)],
           ),
         ),
-        onChanged: (v) {
-          setState(() => _searchText = v);
-          _persistState();
-        },
-        onSubmitted: (_) {
-          if (_semanticMode) _runSemanticSearch();
-        },
+        child: SafeArea(
+          child: Column(
+            children: [
+              const SizedBox(height: 20),
+              const Text(
+                "History 📜",
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // 🔍 Search Bar
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      color: Colors.white.withOpacity(0.15),
+                      child: TextField(
+                        controller: _searchController,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          hintText: "Search emotion...",
+                          hintStyle:
+                              const TextStyle(color: Colors.white70),
+                          border: InputBorder.none,
+                          suffixIcon: _searchText.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.close,
+                                      color: Colors.white),
+                                  onPressed: _clearSearch,
+                                )
+                              : null,
+                        ),
+                        onChanged: _onSearchChanged,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              Expanded(
+                child: _loading
+                    ? const Center(
+                        child:
+                            CircularProgressIndicator(color: Colors.white),
+                      )
+                    : AnimatedSwitcher(
+                        duration:
+                            const Duration(milliseconds: 300),
+                        child: history.isEmpty
+                            ? const Center(
+                                key: ValueKey("empty"),
+                                child: Text(
+                                  "No records found",
+                                  style:
+                                      TextStyle(color: Colors.white70),
+                                ),
+                              )
+                            : ListView.builder(
+                                key: ValueKey(history.length),
+                                padding:
+                                    const EdgeInsets.fromLTRB(
+                                        16, 0, 16, 24),
+                                itemCount: history.length,
+                                itemBuilder: (_, index) {
+                                  final item = history[index];
+                                  final emotion = item["emotion"]
+                                      .toString()
+                                      .toLowerCase();
+                                  final id = item["id"];
+
+                                  return Dismissible(
+                                    key: ValueKey(id ?? index),
+                                    direction:
+                                        DismissDirection.endToStart,
+                                    background: Container(
+                                      margin: const EdgeInsets.only(
+                                          bottom: 16),
+                                      padding:
+                                          const EdgeInsets.symmetric(
+                                              horizontal: 20),
+                                      alignment:
+                                          Alignment.centerRight,
+                                      decoration: BoxDecoration(
+                                        color: Colors.redAccent,
+                                        borderRadius:
+                                            BorderRadius.circular(22),
+                                      ),
+                                      child: const Icon(
+                                        Icons.delete,
+                                        color: Colors.white,
+                                        size: 28,
+                                      ),
+                                    ),
+                                    onDismissed: (_) {
+                                      final removedItem = item;
+
+                                      setState(() {
+                                        _allHistory.removeAt(index);
+                                      });
+
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(
+                                          content: const Text(
+                                              "History deleted"),
+                                          action: SnackBarAction(
+                                            label: "UNDO",
+                                            onPressed: () {
+                                              setState(() {
+                                                _allHistory.insert(
+                                                    index,
+                                                    removedItem);
+                                              });
+                                            },
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    child: _HistoryCard(
+                                      emotion: emotion,
+                                      confidence:
+                                          item["confidence"],
+                                      severity: item["severity"],
+                                      createdAt:
+                                          item["created_at"],
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
+}
 
-  Widget _buildEmotionChips() {
-    final emotions = ["all", ...emotionSynonyms.keys];
+// ======================================
+// CARD WITH DATE & TIME
+// ======================================
 
-    return SizedBox(
-      height: 50,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        itemCount: emotions.length,
-        itemBuilder: (_, i) {
-          final e = emotions[i];
-          final selected = _selectedEmotion == e;
+class _HistoryCard extends StatelessWidget {
+  final String emotion;
+  final double confidence;
+  final dynamic severity;
+  final String? createdAt;
 
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: ChoiceChip(
-              label: Text(e.toUpperCase()),
-              selected: selected,
-              onSelected: (_) {
-                HapticFeedback.selectionClick();
-                setState(() => _selectedEmotion = e);
-                _persistState();
-              },
+  const _HistoryCard({
+    required this.emotion,
+    required this.confidence,
+    required this.severity,
+    required this.createdAt,
+  });
+
+  String _emoji(String emotion) {
+    switch (emotion) {
+      case "happy":
+        return "😊";
+      case "sad":
+        return "😔";
+      case "anxiety":
+        return "😰";
+      case "angry":
+        return "😡";
+      case "depression":
+        return "💔";
+      case "suicidal":
+        return "🚨";
+      default:
+        return "😐";
+    }
+  }
+
+  String _formatDate(String? date) {
+    if (date == null) return "";
+
+    final parsed = DateTime.tryParse(date);
+    if (parsed == null) return "";
+
+    final formattedDate =
+        DateFormat('dd MMM yyyy').format(parsed);
+
+    final formattedTime =
+        DateFormat('hh:mm a').format(parsed);
+
+    return "$formattedDate • $formattedTime";
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(_emoji(emotion),
+                  style: const TextStyle(fontSize: 26)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  emotion.toUpperCase(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            "Confidence: ${(confidence * 100).toStringAsFixed(1)}%",
+            style: const TextStyle(color: Colors.white70),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _formatDate(createdAt),
+            style: const TextStyle(
+              color: Colors.white60,
+              fontSize: 12,
             ),
-          );
-        },
+          ),
+        ],
       ),
     );
   }

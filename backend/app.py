@@ -30,6 +30,7 @@ from schemas import (
     TokenResponse,
     EmotionCreate,
     RefreshTokenRequest,
+    ProfileUpdate,   # 👈 ADD THIS
 )
 from security import (
     hash_password,
@@ -206,11 +207,55 @@ def profile(
 
     return {
         "user_id": user.id,
+        "name": user.name,  # 👈 NEW
         "email": user.email,
         "total_entries": total_entries,
         "avg_severity": float(avg_severity or 0),
         "high_risk": (avg_severity or 0) >= 3.5,
+
+        # 🔥 Emergency system fields
+        "emergency_email": user.emergency_email,
+        "emergency_name": user.emergency_name,
+        "alerts_enabled": user.alerts_enabled,
     }
+
+# =====================================================
+# UPDATE PROFILE
+# =====================================================
+@app.put("/profile")
+def update_profile(
+    profile: ProfileUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+
+    # 👤 Update Name
+    if profile.name is not None:
+        user.name = profile.name
+
+    # 📧 Update Email
+    if profile.email is not None:
+        user.email = profile.email
+
+    # 🔐 Update Password
+    if profile.password is not None:
+        user.password = hash_password(profile.password)
+
+    # 🚨 Emergency Fields
+    if profile.emergency_name is not None:
+        user.emergency_name = profile.emergency_name
+
+    if profile.emergency_email is not None:
+        user.emergency_email = profile.emergency_email
+
+    if profile.alerts_enabled is not None:
+        user.alerts_enabled = profile.alerts_enabled
+
+    db.commit()
+    db.refresh(user)
+
+    return {"message": "Profile updated successfully"}
+
 
 # =====================================================
 # HISTORY

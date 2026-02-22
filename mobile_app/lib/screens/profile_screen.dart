@@ -9,601 +9,648 @@ class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
   @override
-  State<ProfileScreen> createState() =>
-      _ProfileScreenState();
+  State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState
-    extends State<ProfileScreen>
+class _ProfileScreenState extends State<ProfileScreen>
     with SingleTickerProviderStateMixin {
-  late Future<Map<String, dynamic>>
-      _profileFuture;
 
-  late AnimationController _controller;
-  late Animation<double> _fade;
+  late Future<Map<String, dynamic>> _profileFuture;
 
-  bool _saving = false;
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
+  late Animation<double> _scaleAnimation;
 
   @override
   void initState() {
     super.initState();
-    _profileFuture =
-        PredictService.fetchProfile();
 
-    _controller = AnimationController(
+    _profileFuture = PredictService.fetchProfile();
+
+    _animationController = AnimationController(
       vsync: this,
-      duration:
-          const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 900),
     );
 
-    _fade = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeInOut,
+    _fadeAnimation =
+        CurvedAnimation(parent: _animationController, curve: Curves.easeOut);
+
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.3),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Curves.easeOutCubic,
+      ),
     );
+
+    _scaleAnimation = Tween<double>(
+      begin: 0.85,
+      end: 1,
+    ).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Curves.easeOutBack,
+      ),
+    );
+
+    _animationController.forward();
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _animationController.dispose();
     super.dispose();
   }
 
   void _refreshProfile() {
     setState(() {
-      _profileFuture =
-          PredictService.fetchProfile();
+      _profileFuture = PredictService.fetchProfile();
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: true,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
-        title: const Text("Profile"),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () => context.go("/settings"),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        title: const Text(
+          "Profile",
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
           ),
-        ],
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: FutureBuilder<
-          Map<String, dynamic>>(
-        future: _profileFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState ==
-              ConnectionState.waiting) {
-            return const Center(
-              child:
-                  CircularProgressIndicator(),
-            );
-          }
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              Color(0xFF6D5DF6),
+              Color(0xFF5B4BE0),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: SafeArea(
+          child: FutureBuilder<Map<String, dynamic>>(
+            future: _profileFuture,
+            builder: (context, snapshot) {
 
-          if (snapshot.hasError) {
-            return Center(
-              child: Text(
-                snapshot.error.toString(),
-                textAlign:
-                    TextAlign.center,
-              ),
-            );
-          }
+              if (snapshot.connectionState ==
+                  ConnectionState.waiting) {
+                return const Center(
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                  ),
+                );
+              }
 
-          final data =
-              snapshot.data ?? {};
+              final data = snapshot.data ?? {};
 
-          _controller.forward();
+              final email = data["email"] ?? "Unknown";
+              final totalEntries = data["total_entries"] ?? 0;
+              final avgSeverity =
+                  (data["avg_severity"] ?? 0).toDouble();
+              final highRisk =
+                  data["high_risk"] == true;
 
-          final email =
-              data["email"] ?? "Unknown";
-          final totalEntries =
-              data["total_entries"] ?? 0;
-          final avgSeverity =
-              (data["avg_severity"] ?? 0)
-                  .toDouble();
-          final highRisk =
-              data["high_risk"] == true;
+              final emergencyEmail =
+                  data["emergency_email"] ?? "Not Set";
+              final emergencyName =
+                  data["emergency_name"] ?? "Not Set";
+              final alertsEnabled =
+                  data["alerts_enabled"] ?? true;
 
-          final emergencyEmail =
-              data["emergency_email"] ??
-                  "Not Set";
-          final emergencyName =
-              data["emergency_name"] ??
-                  "Not Set";
-          final alertsEnabled =
-              data["alerts_enabled"] ??
-                  true;
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment:
+                      CrossAxisAlignment.start,
+                  children: [
 
-          return FadeTransition(
-            opacity: _fade,
-            child:
-                SingleChildScrollView(
-              padding:
-                  const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  _profileHeader(email),
-                  const SizedBox(height: 20),
-                  _statCard(
-                      "Total Entries",
-                      totalEntries
-                          .toString(),
-                      Icons.list_alt),
-                  _statCard(
-                      "Avg Severity",
-                      avgSeverity
-                          .toStringAsFixed(
-                              1),
-                      Icons
-                          .analytics_outlined),
-                  const SizedBox(height: 20),
-                  _emergencyCard(
+                    _animatedProfileHeader(email),
+
+                    const SizedBox(height: 30),
+
+                    _sectionTitle("Your Insights"),
+                    const SizedBox(height: 16),
+
+                    _infoCard(
+                      icon: Icons.edit_note,
+                      title: "Total Journal Entries",
+                      value: totalEntries.toString(),
+                    ),
+
+                    _infoCard(
+                      icon: Icons.analytics_outlined,
+                      title: "Average Emotional Score",
+                      value: avgSeverity.toStringAsFixed(1),
+                    ),
+
+                    if (highRisk) _warningCard(),
+
+                    const SizedBox(height: 30),
+
+                    _sectionTitle("Emergency Contact"),
+                    const SizedBox(height: 16),
+
+                    _emergencyCard(
                       emergencyName,
                       emergencyEmail,
-                      alertsEnabled),
-                  if (highRisk)
-                    _alertCard(),
-                  const SizedBox(height: 30),
-                  _logoutButton(),
-                ],
-              ),
-            ),
-          );
-        },
+                      alertsEnabled,
+                    ),
+
+                    const SizedBox(height: 30),
+
+                    _sectionTitle("Account"),
+                    const SizedBox(height: 16),
+
+                    _settingsTile(
+                      icon: Icons.settings,
+                      title: "Settings",
+                      onTap: () =>
+                          context.go("/settings"),
+                    ),
+
+                    _settingsTile(
+                      icon: Icons.edit,
+                      title: "Edit Profile",
+                      onTap: () async {
+                        final data =
+                            await _profileFuture;
+                        if (!mounted) return;
+                        _openEditProfileSheet(data);
+                      },
+                    ),
+
+                    const SizedBox(height: 40),
+
+                    _logoutButton(),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
       ),
     );
   }
 
-  // =============================
-  // HEADER
-  // =============================
-  Widget _profileHeader(String email) {
-    return Container(
-      padding:
-          const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [
-            Color(0xFF6366F1),
-            Color(0xFF8B5CF6),
-          ],
+  // ================= Animated Header =================
+
+  Widget _animatedProfileHeader(String email) {
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: SlideTransition(
+        position: _slideAnimation,
+        child: ScaleTransition(
+          scale: _scaleAnimation,
+          child: Center(
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.white.withOpacity(0.4),
+                        blurRadius: 30,
+                        spreadRadius: 5,
+                      ),
+                    ],
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.all(22),
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white,
+                    ),
+                    child: const Icon(
+                      Icons.person,
+                      size: 50,
+                      color: Colors.deepPurple,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  email,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-        borderRadius:
-            BorderRadius.circular(20),
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        fontSize: 18,
+        fontWeight: FontWeight.bold,
+        color: Colors.white,
+      ),
+    );
+  }
+
+  Widget _infoCard({
+    required IconData icon,
+    required String title,
+    required String value,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         children: [
-          const CircleAvatar(
-            radius: 30,
-            backgroundColor:
-                Colors.white,
-            child: Icon(Icons.person,
-                size: 32,
-                color: Colors
-                    .deepPurple),
-          ),
+          Icon(icon, color: Colors.deepPurple),
           const SizedBox(width: 14),
           Expanded(
             child: Text(
-              email,
-              style:
-                  const TextStyle(
-                fontWeight:
-                    FontWeight.bold,
-                fontSize: 16,
-                color: Colors.white,
+              title,
+              style: const TextStyle(
+                color: Colors.black87,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ),
-          IconButton(
-            icon: const Icon(
-                Icons.edit,
-                color:
-                    Colors.white),
-            onPressed: () async {
-              final data =
-                  await _profileFuture;
-              if (!mounted) return;
-              _openEditProfileSheet(
-                  data);
-            },
-          )
+          Text(
+            value,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.black,
+            ),
+          ),
         ],
       ),
     );
   }
 
-  // =============================
-  // STAT CARD
-  // =============================
-  Widget _statCard(
-      String title,
-      String value,
-      IconData icon) {
-    return Card(
-      margin: const EdgeInsets.only(
-          bottom: 12),
-      shape:
-          RoundedRectangleBorder(
-        borderRadius:
-            BorderRadius.circular(16),
+  Widget _warningCard() {
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(16),
       ),
-      child: ListTile(
-        leading: Icon(icon,
-            color:
-                Colors.deepPurple),
-        title: Text(title),
-        trailing: Text(
-          value,
-          style: const TextStyle(
-              fontWeight:
-                  FontWeight.bold),
+      child: const Text(
+        "High risk patterns detected.",
+        style: TextStyle(
+          color: Colors.red,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
   }
 
-  // =============================
-  // EMERGENCY CARD
-  // =============================
   Widget _emergencyCard(
       String name,
       String email,
       bool enabled) {
-    return Card(
-      shape:
-          RoundedRectangleBorder(
-        borderRadius:
-            BorderRadius.circular(16),
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
       ),
-      color:
-          Colors.orange.withOpacity(
-              0.08),
-      child: Padding(
-        padding:
-            const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment:
-              CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "🚨 Emergency Contact",
-              style: TextStyle(
-                  fontWeight:
-                      FontWeight.bold),
+      child: Column(
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
+        children: [
+          Text("Name: $name",
+              style: const TextStyle(color: Colors.black87)),
+          const SizedBox(height: 6),
+          Text("Email: $email",
+              style: const TextStyle(color: Colors.black87)),
+          const SizedBox(height: 6),
+          Text(
+            enabled ? "Alerts Enabled" : "Alerts Disabled",
+            style: TextStyle(
+              color: enabled ? Colors.green : Colors.red,
+              fontWeight: FontWeight.bold,
             ),
-            const SizedBox(height: 8),
-            Text("Name: $name"),
-            Text("Email: $email"),
-            const SizedBox(height: 6),
-            Text(
-              enabled
-                  ? "Alerts Enabled"
-                  : "Alerts Disabled",
-              style: TextStyle(
-                color: enabled
-                    ? Colors.green
-                    : Colors.red,
-                fontWeight:
-                    FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  // =============================
-  // ALERT
-  // =============================
-  Widget _alertCard() {
-    return Card(
-      margin:
-          const EdgeInsets.only(
-              top: 14),
-      color:
-          Colors.red.withOpacity(
-              0.1),
-      child: const Padding(
-        padding:
-            EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Icon(Icons.warning,
-                color: Colors.red),
-            SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                "High risk patterns detected. Please consider professional support.",
-                style: TextStyle(
-                    fontWeight:
-                        FontWeight.bold),
-              ),
-            ),
-          ],
-        ),
+  Widget _settingsTile({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(icon, color: Colors.white),
+      title: Text(title,
+          style: const TextStyle(color: Colors.white)),
+      trailing: const Icon(
+        Icons.arrow_forward_ios,
+        size: 16,
+        color: Colors.white70,
       ),
+      onTap: onTap,
     );
   }
 
-  // =============================
-  // LOGOUT
-  // =============================
   Widget _logoutButton() {
     return SizedBox(
       width: double.infinity,
-      child: ElevatedButton.icon(
-        icon:
-            const Icon(Icons.logout),
-        label:
-            const Text("Logout"),
-        style:
-            ElevatedButton.styleFrom(
-          backgroundColor:
-              Colors.red,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.red,
+          padding: const EdgeInsets.symmetric(vertical: 14),
         ),
-        onPressed:
-            _confirmLogout,
+        onPressed: _confirmLogout,
+        child: const Text(
+          "Logout",
+          style: TextStyle(color: Colors.white),
+        ),
       ),
     );
   }
 
   Future<void> _confirmLogout() async {
-    final result =
-        await showDialog<bool>(
-      context: context,
-      builder: (_) =>
-          AlertDialog(
-        title: const Text(
-            "Confirm Logout"),
-        content: const Text(
-            "Are you sure you want to logout?"),
-        actions: [
-          TextButton(
-            onPressed: () =>
-                Navigator.pop(
-                    context,
-                    false),
-            child:
-                const Text("Cancel"),
-          ),
-          ElevatedButton(
-            onPressed: () =>
-                Navigator.pop(
-                    context,
-                    true),
-            child:
-                const Text("Logout"),
-          ),
-        ],
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove("last_tab_index");
+    await AuthService.logout();
+    if (mounted) context.go("/login");
+  }
+
+  void _openEditProfileSheet(Map<String, dynamic> data) {
+  final nameController =
+      TextEditingController(text: data["name"] ?? "");
+
+  final emailController =
+      TextEditingController(text: data["email"] ?? "");
+
+  final emergencyNameController =
+      TextEditingController(text: data["emergency_name"] ?? "");
+
+  final emergencyEmailController =
+      TextEditingController(text: data["emergency_email"] ?? "");
+
+  final passwordController = TextEditingController();
+  final confirmPasswordController = TextEditingController();
+
+  bool alertsEnabled = data["alerts_enabled"] ?? true;
+  bool isSaving = false;
+
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(
+        top: Radius.circular(20),
       ),
-    );
+    ),
+    builder: (_) {
+      return StatefulBuilder(
+        builder: (context, setModalState) {
+          return Padding(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 20,
+              bottom:
+                  MediaQuery.of(context).viewInsets.bottom + 20,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
 
-    if (result == true &&
-        mounted) {
-      final prefs =
-          await SharedPreferences
-              .getInstance();
-      await prefs.remove(
-          "last_tab_index");
+                  const Text(
+                    "Edit Profile",
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
 
-      await AuthService.logout();
+                  const SizedBox(height: 24),
 
-      context.go("/login");
-    }
-  }
+                  // 👤 NAME
+                  TextField(
+                    controller: nameController,
+                    style: const TextStyle(color: Colors.black),
+                    decoration: const InputDecoration(
+                      labelText: "Full Name",
+                      labelStyle:
+                          TextStyle(color: Colors.black54),
+                    ),
+                  ),
 
-  // =============================
-  // EDIT PROFILE SHEET
-  // =============================
-  void _openEditProfileSheet(
-      Map<String, dynamic> data) {
-    final emailController =
-        TextEditingController(
-            text: data["email"] ??
-                "");
+                  const SizedBox(height: 16),
 
-    final passwordController =
-        TextEditingController();
+                  // 📧 EMAIL
+                  TextField(
+                    controller: emailController,
+                    style: const TextStyle(color: Colors.black),
+                    decoration: const InputDecoration(
+                      labelText: "Email",
+                      labelStyle:
+                          TextStyle(color: Colors.black54),
+                    ),
+                  ),
 
-    final emergencyNameController =
-        TextEditingController(
-            text: data[
-                    "emergency_name"] ??
-                "");
+                  const SizedBox(height: 16),
 
-    final emergencyEmailController =
-        TextEditingController(
-            text: data[
-                    "emergency_email"] ??
-                "");
+                  // 🔐 PASSWORD
+                  TextField(
+                    controller: passwordController,
+                    obscureText: true,
+                    style: const TextStyle(color: Colors.black),
+                    decoration: const InputDecoration(
+                      labelText: "New Password",
+                      labelStyle:
+                          TextStyle(color: Colors.black54),
+                    ),
+                  ),
 
-    bool alertsEnabled =
-        data["alerts_enabled"] ??
-            true;
+                  const SizedBox(height: 16),
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) {
-        return StatefulBuilder(
-          builder: (context,
-              setModalState) {
-            return Padding(
-              padding:
-                  EdgeInsets.only(
-                left: 16,
-                right: 16,
-                top: 20,
-                bottom:
-                    MediaQuery.of(
-                                context)
-                            .viewInsets
-                            .bottom +
-                        20,
-              ),
-              child:
-                  SingleChildScrollView(
-                child: Column(
-                  children: [
-                    const Text(
-                      "Edit Profile",
+                  // 🔒 CONFIRM PASSWORD
+                  TextField(
+                    controller: confirmPasswordController,
+                    obscureText: true,
+                    style: const TextStyle(color: Colors.black),
+                    decoration: const InputDecoration(
+                      labelText: "Confirm Password",
+                      labelStyle:
+                          TextStyle(color: Colors.black54),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // 🚨 EMERGENCY NAME
+                  TextField(
+                    controller: emergencyNameController,
+                    style: const TextStyle(color: Colors.black),
+                    decoration: const InputDecoration(
+                      labelText: "Emergency Contact Name",
+                      labelStyle:
+                          TextStyle(color: Colors.black54),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // 🚨 EMERGENCY EMAIL
+                  TextField(
+                    controller: emergencyEmailController,
+                    style: const TextStyle(color: Colors.black),
+                    decoration: const InputDecoration(
+                      labelText: "Emergency Contact Email",
+                      labelStyle:
+                          TextStyle(color: Colors.black54),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text(
+                      "Enable Crisis Alerts",
                       style:
-                          TextStyle(
-                        fontWeight:
-                            FontWeight
-                                .bold,
-                        fontSize: 18,
-                      ),
+                          TextStyle(color: Colors.black87),
                     ),
-                    const SizedBox(
-                        height: 16),
-                    TextField(
-                      controller:
-                          emailController,
-                      decoration:
-                          const InputDecoration(
-                              labelText:
-                                  "Email"),
-                    ),
-                    const SizedBox(
-                        height: 12),
-                    TextField(
-                      controller:
-                          passwordController,
-                      obscureText:
-                          true,
-                      decoration:
-                          const InputDecoration(
-                        labelText:
-                            "New Password (optional)",
-                      ),
-                    ),
-                    const SizedBox(
-                        height: 12),
-                    TextField(
-                      controller:
-                          emergencyNameController,
-                      decoration:
-                          const InputDecoration(
-                        labelText:
-                            "Emergency Contact Name",
-                      ),
-                    ),
-                    const SizedBox(
-                        height: 12),
-                    TextField(
-                      controller:
-                          emergencyEmailController,
-                      decoration:
-                          const InputDecoration(
-                        labelText:
-                            "Emergency Contact Email",
-                      ),
-                    ),
-                    const SizedBox(
-                        height: 12),
-                    SwitchListTile(
-                      title: const Text(
-                          "Enable Crisis Alerts"),
-                      value:
-                          alertsEnabled,
-                      onChanged:
-                          (value) {
-                        setModalState(() =>
-                            alertsEnabled =
-                                value);
-                      },
-                    ),
-                    const SizedBox(
-                        height: 20),
-                    SizedBox(
-                      width:
-                          double.infinity,
-                      child:
-                          ElevatedButton(
-                        onPressed:
-                            _saving
-                                ? null
-                                : () async {
-                                    setState(() =>
-                                        _saving =
-                                            true);
+                    value: alertsEnabled,
+                    activeColor: Colors.deepPurple,
+                    onChanged: (value) {
+                      setModalState(() {
+                        alertsEnabled = value;
+                      });
+                    },
+                  ),
 
-                                    try {
-                                      await PredictService
-                                          .updateProfile(
-                                        email:
-                                            emailController
-                                                .text
-                                                .trim(),
-                                        password: passwordController
-                                                .text
-                                                .trim()
-                                                .isEmpty
-                                            ? null
-                                            : passwordController
-                                                .text
-                                                .trim(),
-                                        emergencyName:
-                                            emergencyNameController
-                                                .text
-                                                .trim(),
-                                        emergencyEmail:
-                                            emergencyEmailController
-                                                .text
-                                                .trim(),
-                                        alertsEnabled:
-                                            alertsEnabled,
-                                      );
+                  const SizedBox(height: 24),
 
-                                      if (!mounted)
-                                        return;
-
-                                      Navigator.pop(
-                                          context);
-
-                                      _refreshProfile();
-
-                                      ScaffoldMessenger.of(
-                                              context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                            content: Text(
-                                                "Profile updated successfully")),
-                                      );
-                                    } catch (e) {
-                                      ScaffoldMessenger.of(
-                                              context)
-                                          .showSnackBar(
-                                        SnackBar(
-                                            content: Text(
-                                                e.toString())),
-                                      );
-                                    } finally {
-                                      setState(() =>
-                                          _saving =
-                                              false);
-                                    }
-                                  },
-                        child: _saving
-                            ? const CircularProgressIndicator(
-                                color:
-                                    Colors
-                                        .white,
-                              )
-                            : const Text(
-                                "Save Changes"),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.deepPurple,
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius:
+                              BorderRadius.circular(12),
+                        ),
                       ),
+                      onPressed: isSaving
+                          ? null
+                          : () async {
+                              if (passwordController.text.isNotEmpty &&
+                                  passwordController.text !=
+                                      confirmPasswordController
+                                          .text) {
+                                ScaffoldMessenger.of(context)
+                                    .showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                        "Passwords do not match"),
+                                  ),
+                                );
+                                return;
+                              }
+
+                              setModalState(() {
+                                isSaving = true;
+                              });
+
+                              try {
+                                await PredictService.updateProfile(
+                                  name: nameController.text.trim(),
+                                  email: emailController.text.trim(),
+                                  password: passwordController
+                                          .text
+                                          .trim()
+                                          .isEmpty
+                                      ? null
+                                      : passwordController.text.trim(),
+                                  emergencyName:
+                                      emergencyNameController.text.trim(),
+                                  emergencyEmail:
+                                      emergencyEmailController.text.trim(),
+                                  alertsEnabled: alertsEnabled,
+                                );
+
+                                if (!mounted) return;
+
+                                Navigator.pop(context);
+                                _refreshProfile();
+
+                                ScaffoldMessenger.of(context)
+                                    .showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                        "Profile updated successfully"),
+                                  ),
+                                );
+                              } catch (e) {
+                                ScaffoldMessenger.of(context)
+                                    .showSnackBar(
+                                  SnackBar(
+                                    content: Text(e.toString()),
+                                  ),
+                                );
+                              } finally {
+                                setModalState(() {
+                                  isSaving = false;
+                                });
+                              }
+                            },
+                      child: isSaving
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child:
+                                  CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Text(
+                              "Save Changes",
+                              style: TextStyle(
+                                  color: Colors.white),
+                            ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            );
-          },
-        );
-      },
-    );
-  }
+            ),
+          );
+        },
+      );
+    },
+  );
+}
 }
