@@ -5,7 +5,6 @@ import os
 import sys
 import logging
 
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(BASE_DIR)
 
@@ -74,11 +73,25 @@ cloudinary.config(
 )
 
 # =====================================================
+# EMAIL CONFIG (FIX ADDED)
+# =====================================================
+mail_conf = ConnectionConfig(
+    MAIL_USERNAME=os.getenv("MAIL_USERNAME"),
+    MAIL_PASSWORD=os.getenv("MAIL_PASSWORD"),
+    MAIL_FROM=os.getenv("MAIL_FROM"),
+    MAIL_PORT=587,
+    MAIL_SERVER="smtp.gmail.com",
+    MAIL_STARTTLS=True,
+    MAIL_SSL_TLS=False,
+    USE_CREDENTIALS=True,
+)
+
+# =====================================================
 # FASTAPI APP
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="9.0.0",
+    version="9.0.1",
 )
 
 # =====================================================
@@ -104,14 +117,12 @@ async def global_exception_handler(request, exc):
     )
 
 # =====================================================
-# CORS
+# CORS (FIXED FOR FLUTTER WEB PORTS)
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://mental-health-app-zpng.onrender.com",
-        "http://localhost",
-        "http://127.0.0.1",
     ],
     allow_origin_regex=r"http://localhost:\d+",
     allow_credentials=True,
@@ -312,9 +323,6 @@ def history(
         for r in records
     ]
 
-    # =====================================================
-# 🧠 PREDICT EMOTION
-# =====================================================
 # =====================================================
 # 🧠 PREDICT + EMERGENCY EMAIL ALERT
 # =====================================================
@@ -343,7 +351,6 @@ async def predict_emotion_api(
 
     severity = severity_map.get(emotion, 1)
 
-    # Save to database
     history_entry = EmotionHistory(
         user_id=user.id,
         emotion=emotion,
@@ -356,9 +363,6 @@ async def predict_emotion_api(
 
     emergency_triggered = False
 
-    # =====================================================
-    # 🚨 EMERGENCY EMAIL LOGIC
-    # =====================================================
     if emotion == "Suicidal" and user.alerts_enabled and user.emergency_email:
 
         suicidal_count = (
@@ -370,7 +374,6 @@ async def predict_emotion_api(
             .count()
         )
 
-        # Send email ONLY when count reaches 3
         if suicidal_count == 3:
 
             message = MessageSchema(
