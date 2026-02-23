@@ -1,14 +1,15 @@
 import 'package:flutter/foundation.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class BiometricService {
   static final LocalAuthentication _auth = LocalAuthentication();
+  static const String _biometricKey = "biometric_enabled";
 
   // =========================
   // CHECK BIOMETRIC SUPPORT
   // =========================
   static Future<bool> canAuthenticate() async {
-    // ❌ Web does NOT support biometrics
     if (kIsWeb) return false;
 
     try {
@@ -37,5 +38,23 @@ class BiometricService {
     } catch (_) {
       return false;
     }
+  }
+
+  // =========================
+  // ENABLE / DISABLE BIOMETRIC
+  // =========================
+  static Future<void> setEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_biometricKey, value);
+  }
+
+  static Future<bool> isEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_biometricKey) ?? false;
+  }
+
+  static Future<void> disable() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_biometricKey);
   }
 }

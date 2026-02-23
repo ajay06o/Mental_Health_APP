@@ -56,13 +56,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
   }
 
-  // ===============================
-  // 🔍 Debounced Search
-  // ===============================
-
   void _onSearchChanged(String value) {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
-
     _debounce = Timer(const Duration(milliseconds: 300), () {
       setState(() {
         _searchText = value;
@@ -75,10 +70,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
     setState(() => _searchText = "");
   }
 
-  // ===============================
-  // Smart Filter
-  // ===============================
-
   List<Map<String, dynamic>> get filteredHistory {
     final search = _searchText.trim().toLowerCase();
 
@@ -89,11 +80,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
       final emotion = item["emotion"].toString().toLowerCase();
       final synonyms = emotionSynonyms[emotion] ?? [];
 
-      if (emotion.startsWith(search)) return true;
-
-      if (synonyms.any((e) => e.toLowerCase().startsWith(search))) {
-        return true;
-      }
+      if (emotion.contains(search)) return true;
+      if (synonyms.any((e) => e.toLowerCase().contains(search))) return true;
 
       return false;
     }).toList();
@@ -125,7 +113,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ),
               const SizedBox(height: 20),
 
-              // 🔍 Search Bar
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: ClipRRect(
@@ -166,91 +153,91 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         child:
                             CircularProgressIndicator(color: Colors.white),
                       )
-                    : AnimatedSwitcher(
-                        duration:
-                            const Duration(milliseconds: 300),
-                        child: history.isEmpty
-                            ? const Center(
-                                key: ValueKey("empty"),
-                                child: Text(
-                                  "No records found",
-                                  style:
-                                      TextStyle(color: Colors.white70),
+                    : history.isEmpty
+                        ? const Center(
+                            child: Text(
+                              "No records found",
+                              style:
+                                  TextStyle(color: Colors.white70),
+                            ),
+                          )
+                        : ListView.builder(
+                            padding:
+                                const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                            itemCount: history.length,
+                            itemBuilder: (_, index) {
+                              final item = history[index];
+                              final emotion =
+                                  item["emotion"].toString().toLowerCase();
+                              final recordId = item["id"];
+
+                              return Dismissible(
+                                key: ValueKey(recordId),
+                                direction: DismissDirection.endToStart,
+                                background: Container(
+                                  margin:
+                                      const EdgeInsets.only(bottom: 16),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 20),
+                                  alignment: Alignment.centerRight,
+                                  decoration: BoxDecoration(
+                                    color: Colors.redAccent,
+                                    borderRadius:
+                                        BorderRadius.circular(22),
+                                  ),
+                                  child: const Icon(
+                                    Icons.delete,
+                                    color: Colors.white,
+                                    size: 28,
+                                  ),
                                 ),
-                              )
-                            : ListView.builder(
-                                key: ValueKey(history.length),
-                                padding:
-                                    const EdgeInsets.fromLTRB(
-                                        16, 0, 16, 24),
-                                itemCount: history.length,
-                                itemBuilder: (_, index) {
-                                  final item = history[index];
-                                  final emotion = item["emotion"]
-                                      .toString()
-                                      .toLowerCase();
-                                  final id = item["id"];
+                                onDismissed: (_) async {
+                                  final removedItem = item;
 
-                                  return Dismissible(
-                                    key: ValueKey(id ?? index),
-                                    direction:
-                                        DismissDirection.endToStart,
-                                    background: Container(
-                                      margin: const EdgeInsets.only(
-                                          bottom: 16),
-                                      padding:
-                                          const EdgeInsets.symmetric(
-                                              horizontal: 20),
-                                      alignment:
-                                          Alignment.centerRight,
-                                      decoration: BoxDecoration(
-                                        color: Colors.redAccent,
-                                        borderRadius:
-                                            BorderRadius.circular(22),
+                                  setState(() {
+                                    _allHistory.removeWhere(
+                                        (e) => e["id"] == recordId);
+                                  });
+
+                                  try {
+                                    await PredictService
+                                        .deleteHistory(recordId);
+                                  } catch (_) {
+                                    setState(() {
+                                      _allHistory.insert(
+                                          index, removedItem);
+                                    });
+
+                                    ScaffoldMessenger.of(context)
+                                        .showSnackBar(
+                                      const SnackBar(
+                                        content:
+                                            Text("Delete failed"),
                                       ),
-                                      child: const Icon(
-                                        Icons.delete,
-                                        color: Colors.white,
-                                        size: 28,
-                                      ),
-                                    ),
-                                    onDismissed: (_) {
-                                      final removedItem = item;
+                                    );
+                                    return;
+                                  }
 
-                                      setState(() {
-                                        _allHistory.removeAt(index);
-                                      });
-
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(
-                                          content: const Text(
-                                              "History deleted"),
-                                          action: SnackBarAction(
-                                            label: "UNDO",
-                                            onPressed: () {
-                                              setState(() {
-                                                _allHistory.insert(
-                                                    index,
-                                                    removedItem);
-                                              });
-                                            },
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                    child: _HistoryCard(
-                                      emotion: emotion,
-                                      confidence:
-                                          item["confidence"],
-                                      severity: item["severity"],
-                                      createdAt:
-                                          item["created_at"],
+                                  ScaffoldMessenger.of(context)
+                                      .showSnackBar(
+                                    const SnackBar(
+                                      content:
+                                          Text("History deleted"),
                                     ),
                                   );
                                 },
-                              ),
-                      ),
+                                child: _HistoryCard(
+                                  emotion: emotion,
+                                  confidence:
+                                      (item["confidence"] as num)
+                                          .toDouble(),
+                                  severity: item["severity"],
+                                  createdAt: item["created_at"]
+                                      ?.toString(),
+                                ),
+                              );
+                            },
+                          ),
               ),
             ],
           ),
@@ -259,10 +246,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 }
-
-// ======================================
-// CARD WITH DATE & TIME
-// ======================================
 
 class _HistoryCard extends StatelessWidget {
   final String emotion;
@@ -297,22 +280,21 @@ class _HistoryCard extends StatelessWidget {
   }
 
   String _formatDate(String? date) {
-    if (date == null) return "";
+    if (date == null || date.isEmpty) return "";
 
-    final parsed = DateTime.tryParse(date);
-    if (parsed == null) return "";
-
-    final formattedDate =
-        DateFormat('dd MMM yyyy').format(parsed);
-
-    final formattedTime =
-        DateFormat('hh:mm a').format(parsed);
-
-    return "$formattedDate • $formattedTime";
+    try {
+      final parsed = DateTime.parse(date).toLocal();
+      return DateFormat('dd MMM yyyy • hh:mm a')
+          .format(parsed);
+    } catch (_) {
+      return "";
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final formattedDate = _formatDate(createdAt);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(18),
@@ -345,14 +327,16 @@ class _HistoryCard extends StatelessWidget {
             "Confidence: ${(confidence * 100).toStringAsFixed(1)}%",
             style: const TextStyle(color: Colors.white70),
           ),
-          const SizedBox(height: 6),
-          Text(
-            _formatDate(createdAt),
-            style: const TextStyle(
-              color: Colors.white60,
-              fontSize: 12,
+          if (formattedDate.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              formattedDate,
+              style: const TextStyle(
+                color: Colors.white60,
+                fontSize: 12,
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );

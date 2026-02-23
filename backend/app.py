@@ -295,13 +295,41 @@ def history(
 
     return [
         {
+            "id": r.id,  # ✅ Added ID (required for delete)
             "emotion": r.emotion,
             "confidence": r.confidence,
             "severity": r.severity,
-            "timestamp": r.timestamp,
+            "created_at": r.timestamp.isoformat() if r.timestamp else None,
         }
         for r in records
     ]
+
+
+# =====================================================
+# DELETE HISTORY ITEM
+# =====================================================
+@app.delete("/history/{record_id}")
+def delete_history(
+    record_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    record = (
+        db.query(EmotionHistory)
+        .filter(
+            EmotionHistory.id == record_id,
+            EmotionHistory.user_id == user.id,
+        )
+        .first()
+    )
+
+    if not record:
+        raise HTTPException(status_code=404, detail="Record not found")
+
+    db.delete(record)
+    db.commit()
+
+    return {"message": "History deleted successfully"}
 
 # =====================================================
 # PREDICT

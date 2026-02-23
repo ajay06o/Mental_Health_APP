@@ -75,6 +75,22 @@ class PredictService {
   }
 
   // =====================================================
+  // 🗑 DELETE HISTORY
+  // =====================================================
+  static Future<void> deleteHistory(int id) async {
+    try {
+      final token = await AuthService.getAccessToken();
+      if (token == null) {
+        throw Exception("User not authenticated");
+      }
+
+      await ApiClient.delete("/history/$id");
+    } catch (e) {
+      throw Exception("Failed to delete history: $e");
+    }
+  }
+
+  // =====================================================
   // 👤 FETCH PROFILE
   // =====================================================
   static Future<Map<String, dynamic>> fetchProfile() async {

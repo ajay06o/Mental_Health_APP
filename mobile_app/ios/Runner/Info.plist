@@ -45,5 +45,10 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+	<!-- ✅ Added for Face ID biometric authentication -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>This app uses Face ID to enable secure biometric login.</string>
+
 </dict>
 </plist>

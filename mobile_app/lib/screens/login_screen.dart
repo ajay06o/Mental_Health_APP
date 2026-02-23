@@ -16,6 +16,7 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen>
     with TickerProviderStateMixin {
+
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -24,6 +25,7 @@ class _LoginScreenState extends State<LoginScreen>
   bool _obscurePassword = true;
   bool _rememberMe = true;
   bool _biometricAvailable = false;
+  bool _checkingAutoLogin = true; // NEW
 
   late AnimationController _bgController;
   late AnimationController _entranceController;
@@ -37,6 +39,7 @@ class _LoginScreenState extends State<LoginScreen>
 
     _loadSavedCredentials();
     _initBiometrics();
+    _checkAutoBiometricLogin(); // NEW
 
     _bgController = AnimationController(
       vsync: this,
@@ -72,6 +75,28 @@ class _LoginScreenState extends State<LoginScreen>
     _passwordController.dispose();
     super.dispose();
   }
+
+  // ---------------- AUTO BIOMETRIC LOGIN ----------------
+
+  Future<void> _checkAutoBiometricLogin() async {
+    final enabled = await BiometricService.isEnabled();
+
+    if (!enabled) {
+      setState(() => _checkingAutoLogin = false);
+      return;
+    }
+
+    final authenticated = await BiometricService.authenticate();
+
+    if (authenticated && mounted) {
+      HapticFeedback.mediumImpact();
+      context.go("/home");
+    } else {
+      setState(() => _checkingAutoLogin = false);
+    }
+  }
+
+  // ------------------------------------------------------
 
   Future<void> _loadSavedCredentials() async {
     final data = await AuthService.loadSavedCredentials();
@@ -132,6 +157,16 @@ class _LoginScreenState extends State<LoginScreen>
 
   @override
   Widget build(BuildContext context) {
+
+    // 🔒 Prevent UI flicker while auto biometric runs
+    if (_checkingAutoLogin) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
     return Scaffold(
       body: AnimatedBuilder(
         animation: _bgController,
@@ -166,7 +201,6 @@ class _LoginScreenState extends State<LoginScreen>
                           const SizedBox(height: 60),
                           const AppLogo(size: 60),
                           const SizedBox(height: 20),
-
                           const Text(
                             "Welcome Back 🌿",
                             style: TextStyle(
@@ -183,9 +217,7 @@ class _LoginScreenState extends State<LoginScreen>
                               color: Colors.white70,
                             ),
                           ),
-
                           const SizedBox(height: 40),
-
                           ConstrainedBox(
                             constraints:
                                 const BoxConstraints(maxWidth: 420),
@@ -203,6 +235,8 @@ class _LoginScreenState extends State<LoginScreen>
       ),
     );
   }
+
+  // ---------- UI (UNCHANGED) ----------
 
   Widget _glassCard() {
     return ClipRRect(
@@ -277,26 +311,26 @@ class _LoginScreenState extends State<LoginScreen>
         ),
       );
 
-Widget _optionsRow() {
-  return Row(
-    children: [
-      Checkbox(
-        value: _rememberMe,
-        activeColor: const Color(0xFF6D5DF6),
-        onChanged: (v) =>
-            setState(() => _rememberMe = v ?? true),
-      ),
-      const SizedBox(width: 6),
-      const Text(
-        "Remember me",
-        style: TextStyle(
-          color: Colors.black87,
-          fontWeight: FontWeight.w500,
+  Widget _optionsRow() {
+    return Row(
+      children: [
+        Checkbox(
+          value: _rememberMe,
+          activeColor: const Color(0xFF6D5DF6),
+          onChanged: (v) =>
+              setState(() => _rememberMe = v ?? true),
         ),
-      ),
-    ],
-  );
-}
+        const SizedBox(width: 6),
+        const Text(
+          "Remember me",
+          style: TextStyle(
+            color: Colors.black87,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _loginButton() => SizedBox(
         width: double.infinity,
