@@ -18,17 +18,64 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   bool isBiometricEnabled = false;
   bool _isAuthenticating = false;
+  bool notificationsEnabled = true;
+
+  late AnimationController _fadeController;
+  late Animation<double> _fadeAnimation;
+
+  // ✅ Animated Logo Controller
+  late AnimationController _logoController;
+  late Animation<double> _logoAnimation;
 
   @override
   void initState() {
     super.initState();
-    _loadBiometricPreference();
+    _loadPreferences();
+
+    _fadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+
+    _fadeAnimation =
+        CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut);
+
+    _fadeController.forward();
+
+    // ✅ Logo floating animation
+    _logoController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    );
+
+    _logoAnimation = Tween<double>(
+      begin: 0.95,
+      end: 1.05,
+    ).animate(
+      CurvedAnimation(
+        parent: _logoController,
+        curve: Curves.easeInOut,
+      ),
+    );
+
+    _logoController.repeat(reverse: true);
   }
 
-  Future<void> _loadBiometricPreference() async {
+  @override
+  void dispose() {
+    _fadeController.dispose();
+    _logoController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadPreferences() async {
     final prefs = await SharedPreferences.getInstance();
+
     setState(() {
-      isBiometricEnabled = prefs.getBool('biometric_enabled') ?? false;
+      isBiometricEnabled =
+          prefs.getBool('biometric_enabled') ?? false;
+      notificationsEnabled =
+          prefs.getBool('notifications_enabled') ?? true;
     });
   }
 
@@ -45,7 +92,6 @@ class _SettingsScreenState extends State<SettingsScreen>
 
       if (!canCheck || !isDeviceSupported) {
         _showMessage("Biometric not supported on this device.");
-        setState(() => _isAuthenticating = false);
         return;
       }
 
@@ -65,19 +111,131 @@ class _SettingsScreenState extends State<SettingsScreen>
           isBiometricEnabled = value;
         });
 
-        _showMessage("Biometric login ${value ? "enabled" : "disabled"}");
+        _showMessage(
+            "Biometric login ${value ? "enabled" : "disabled"}");
       }
 
-    } catch (e) {
+    } catch (_) {
       _showMessage("Authentication failed.");
     } finally {
       setState(() => _isAuthenticating = false);
     }
   }
 
+  Future<void> _toggleNotifications(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('notifications_enabled', value);
+
+    setState(() {
+      notificationsEnabled = value;
+    });
+
+    _showMessage(
+        "Notifications ${value ? "enabled" : "disabled"}");
+  }
+
   void _showMessage(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg)),
+    );
+  }
+
+  // ✅ Animated About Sheet
+  void _openAboutSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(24),
+        ),
+      ),
+      builder: (_) {
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+
+              // 🔥 Floating Animated Logo
+              AnimatedBuilder(
+                animation: _logoAnimation,
+                builder: (context, child) {
+                  return Transform.scale(
+                    scale: _logoAnimation.value,
+                    child: child,
+                  );
+                },
+                child: Container(
+                  height: 90,
+                  width: 90,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [
+                        Color(0xFF6D5DF6),
+                        Color(0xFF5B4BE0),
+                      ],
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.self_improvement,
+                    color: Colors.white,
+                    size: 45,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              const Text(
+                "Mental Health App",
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                ),
+              ),
+
+              const SizedBox(height: 6),
+
+              const Text(
+                "Version 1.0.0",
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey,
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              const Text(
+                "MindEase is an AI-powered emotional wellness platform "
+                "designed to help you understand and track your mental health journey.",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 15,
+                  height: 1.5,
+                  color: Colors.black87,
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              const Text(
+                "Built with ❤️ using Flutter & FastAPI",
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.black54,
+                ),
+              ),
+
+              const SizedBox(height: 20),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -89,7 +247,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => context.go("/home"), // ✅ Fixed safely
+          onPressed: () => context.go("/home"),
         ),
         title: const Text(
           "Settings",
@@ -101,96 +259,86 @@ class _SettingsScreenState extends State<SettingsScreen>
         centerTitle: true,
         elevation: 0,
         backgroundColor: Colors.transparent,
-        iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Color(0xFF6D5DF6),
-              Color(0xFF5B4BE0),
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+      body: FadeTransition(
+        opacity: _fadeAnimation,
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Color(0xFF6D5DF6),
+                Color(0xFF5B4BE0),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
           ),
-        ),
-        child: SafeArea(
-          child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
+          child: SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
 
-              _buildSectionTitle("Security"),
-              _buildCard(
-                child: SwitchListTile(
-                  title: const Text(
-                    "Biometric Login",
-                    style: TextStyle(color: Colors.white),
-                  ),
-                  subtitle: const Text(
-                    "Use fingerprint or Face ID",
-                    style: TextStyle(color: Colors.white70),
-                  ),
-                  value: isBiometricEnabled,
-                  activeColor: Colors.white,
-                  onChanged: _toggleBiometric,
-                ),
-              ),
-
-              const SizedBox(height: 24),
-
-              _buildSectionTitle("Account"),
-              _buildCard(
-                child: Column(
-                  children: [
-                    ListTile(
-                      leading: const Icon(Icons.logout, color: Colors.orange),
-                      title: const Text(
-                        "Logout",
-                        style: TextStyle(color: Colors.white),
-                      ),
-                      trailing: const Icon(
-                        Icons.arrow_forward_ios,
-                        size: 16,
-                        color: Colors.white70,
-                      ),
-                      onTap: () {
-                        HapticFeedback.mediumImpact();
-                        _showLogoutDialog();
-                      },
+                _buildSectionTitle("Security"),
+                _buildCard(
+                  child: SwitchListTile(
+                    title: const Text(
+                      "Biometric Login",
+                      style: TextStyle(color: Colors.white),
                     ),
-                    const Divider(height: 1, color: Colors.white24),
-                    ListTile(
-                      leading: const Icon(Icons.delete, color: Colors.red),
-                      title: const Text(
-                        "Delete Account",
-                        style: TextStyle(color: Colors.white),
-                      ),
-                      trailing: const Icon(
-                        Icons.arrow_forward_ios,
-                        size: 16,
-                        color: Colors.white70,
-                      ),
-                      onTap: () {
-                        HapticFeedback.heavyImpact();
-                        _showDeleteDialog();
-                      },
+                    subtitle: const Text(
+                      "Use fingerprint or Face ID",
+                      style: TextStyle(color: Colors.white70),
                     ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 40),
-
-              Center(
-                child: Text(
-                  "Version 1.0.0",
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.6),
-                    fontSize: 12,
+                    value: isBiometricEnabled,
+                    activeColor: Colors.white,
+                    onChanged: _toggleBiometric,
                   ),
                 ),
-              ),
-            ],
+
+                const SizedBox(height: 24),
+
+                _buildSectionTitle("Preferences"),
+                _buildCard(
+                  child: SwitchListTile(
+                    title: const Text(
+                      "Notifications",
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    value: notificationsEnabled,
+                    activeColor: Colors.white,
+                    onChanged: _toggleNotifications,
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                _buildSectionTitle("About"),
+                _buildCard(
+                  child: ListTile(
+                    leading: const Icon(
+                      Icons.info,
+                      color: Colors.blue,
+                    ),
+                    title: const Text(
+                      "About MindEase",
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    subtitle: const Text(
+                      "Version 1.0.0",
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                    trailing: const Icon(
+                      Icons.arrow_forward_ios,
+                      size: 16,
+                      color: Colors.white70,
+                    ),
+                    onTap: _openAboutSheet,
+                  ),
+                ),
+
+                const SizedBox(height: 40),
+              ],
+            ),
           ),
         ),
       ),
@@ -221,26 +369,6 @@ class _SettingsScreenState extends State<SettingsScreen>
         ),
       ),
       child: child,
-    );
-  }
-
-  void _showLogoutDialog() {
-    showDialog(
-      context: context,
-      builder: (_) => const AlertDialog(
-        title: Text("Logout"),
-        content: Text("Are you sure you want to logout?"),
-      ),
-    );
-  }
-
-  void _showDeleteDialog() {
-    showDialog(
-      context: context,
-      builder: (_) => const AlertDialog(
-        title: Text("Delete Account"),
-        content: Text("This action is permanent."),
-      ),
     );
   }
 }

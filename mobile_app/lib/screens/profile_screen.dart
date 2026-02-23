@@ -282,79 +282,87 @@ class _ProfileScreenState extends State<ProfileScreen>
   // ================= HEADER =================
 
   Widget _animatedProfileHeader(
-      String displayText,
-      Map<String, dynamic> data) {
+    String displayText,
+    Map<String, dynamic> data) {
 
-    final profileImage = data["profile_image"];
+  final profileImage = data["profile_image"];
 
-    final imageUrl =
-        (profileImage != null &&
-                profileImage.toString().isNotEmpty)
-            ? "${ApiClient.baseUrl}$profileImage"
-            : null;
+  String? imageUrl;
 
-    return FadeTransition(
-      opacity: _fadeAnimation,
-      child: SlideTransition(
-        position: _slideAnimation,
-        child: ScaleTransition(
-          scale: _scaleAnimation,
-          child: Column(
-            children: [
+  if (profileImage != null &&
+      profileImage.toString().isNotEmpty) {
 
-              ScaleTransition(
-                scale: _avatarScale,
-                child: GestureDetector(
-                  onTap: _pickImage,
-                  child: CircleAvatar(
-                    radius: 62,
-                    backgroundColor: Colors.white,
-                    backgroundImage:
-                        imageUrl != null
-                            ? NetworkImage(imageUrl)
-                            : null,
-                    child: imageUrl == null
-                        ? const Icon(
-                            Icons.person,
-                            size: 50,
-                            color: Colors.deepPurple,
-                          )
-                        : null,
-                  ),
+    final imageString = profileImage.toString();
+
+    // ✅ FIX: If already full URL (Cloudinary), use directly
+    if (imageString.startsWith("http")) {
+      imageUrl = imageString;
+    } else {
+      imageUrl = "${ApiClient.baseUrl}$imageString";
+    }
+  }
+
+  return FadeTransition(
+    opacity: _fadeAnimation,
+    child: SlideTransition(
+      position: _slideAnimation,
+      child: ScaleTransition(
+        scale: _scaleAnimation,
+        child: Column(
+          children: [
+
+            ScaleTransition(
+              scale: _avatarScale,
+              child: GestureDetector(
+                onTap: _pickImage,
+                child: CircleAvatar(
+                  radius: 62,
+                  backgroundColor: Colors.white,
+                  backgroundImage:
+                      imageUrl != null
+                          ? NetworkImage(imageUrl)
+                          : null,
+                  child: imageUrl == null
+                      ? const Icon(
+                          Icons.person,
+                          size: 50,
+                          color: Colors.deepPurple,
+                        )
+                      : null,
                 ),
               ),
+            ),
 
-              const SizedBox(height: 20),
+            const SizedBox(height: 20),
 
-              // Smooth name change
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 400),
-                child: Text(
-                  displayText,
-                  key: ValueKey(displayText),
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 400),
+              child: Text(
+                displayText,
+                key: ValueKey(displayText),
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
                 ),
               ),
+            ),
 
-              const SizedBox(height: 6),
+            const SizedBox(height: 6),
 
-              Text(
-                "Emotional Wellness Journey",
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.8),
-                  fontSize: 13,
-                ),
+            Text(
+              "Emotional Wellness Journey",
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.8),
+                fontSize: 13,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   // ================= STAT CARD =================
 
