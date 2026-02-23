@@ -43,7 +43,7 @@ class User(Base):
         nullable=False,
     )
 
-    # 🖼 Profile Image URL (stores "/uploads/user_1.jpg")
+    # 🖼 Profile Image URL
     profile_image = Column(
         String(500),
         nullable=True,
@@ -60,6 +60,13 @@ class User(Base):
     )
 
     alerts_enabled = Column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+
+    # ✅ NEW: Prevents repeated emergency email spam
+    alert_sent = Column(
         Boolean,
         default=False,
         nullable=False,

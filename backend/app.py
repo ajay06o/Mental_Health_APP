@@ -73,25 +73,32 @@ cloudinary.config(
 )
 
 # =====================================================
-# EMAIL CONFIG (FIX ADDED)
+# EMAIL CONFIG (CRASH SAFE)
 # =====================================================
-mail_conf = ConnectionConfig(
-    MAIL_USERNAME=os.getenv("MAIL_USERNAME"),
-    MAIL_PASSWORD=os.getenv("MAIL_PASSWORD"),
-    MAIL_FROM=os.getenv("MAIL_FROM"),
-    MAIL_PORT=587,
-    MAIL_SERVER="smtp.gmail.com",
-    MAIL_STARTTLS=True,
-    MAIL_SSL_TLS=False,
-    USE_CREDENTIALS=True,
-)
+MAIL_USERNAME = os.getenv("MAIL_USERNAME")
+MAIL_PASSWORD = os.getenv("MAIL_PASSWORD")
+MAIL_FROM = os.getenv("MAIL_FROM")
+
+mail_conf = None
+
+if MAIL_USERNAME and MAIL_PASSWORD and MAIL_FROM:
+    mail_conf = ConnectionConfig(
+        MAIL_USERNAME=MAIL_USERNAME,
+        MAIL_PASSWORD=MAIL_PASSWORD,
+        MAIL_FROM=MAIL_FROM,
+        MAIL_PORT=587,
+        MAIL_SERVER="smtp.gmail.com",
+        MAIL_STARTTLS=True,
+        MAIL_SSL_TLS=False,
+        USE_CREDENTIALS=True,
+    )
 
 # =====================================================
 # FASTAPI APP
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="9.0.1",
+    version="9.2.0",
 )
 
 # =====================================================
@@ -117,7 +124,7 @@ async def global_exception_handler(request, exc):
     )
 
 # =====================================================
-# CORS (FIXED FOR FLUTTER WEB PORTS)
+# CORS
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
@@ -195,10 +202,7 @@ def login(
 # PROFILE
 # =====================================================
 @app.get("/profile")
-def profile(
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def profile(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     total_entries = (
         db.query(func.count(EmotionHistory.id))
         .filter(EmotionHistory.user_id == user.id)
@@ -252,59 +256,10 @@ def update_profile(
     return {"message": "Profile updated successfully"}
 
 # =====================================================
-# 🖼 CLOUDINARY PROFILE IMAGE UPLOAD
-# =====================================================
-@app.post("/profile/upload-image")
-def upload_profile_image(
-    file: UploadFile = File(...),
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    allowed_extensions = ["jpg", "jpeg", "png", "webp"]
-
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="Invalid file")
-
-    file_extension = file.filename.split(".")[-1].lower()
-
-    if file_extension not in allowed_extensions:
-        raise HTTPException(
-            status_code=400,
-            detail="Only JPG, JPEG, PNG, WEBP images allowed",
-        )
-
-    try:
-        upload_result = cloudinary.uploader.upload(
-            file.file,
-            folder="mental_health_profiles",
-            public_id=f"user_{user.id}",
-            overwrite=True,
-            transformation=[{"width": 400, "height": 400, "crop": "fill"}],
-        )
-
-        image_url = upload_result.get("secure_url")
-
-        if not image_url:
-            raise HTTPException(status_code=500, detail="Upload failed")
-
-        user.profile_image = image_url
-        db.commit()
-        db.refresh(user)
-
-        return {"profile_image": image_url}
-
-    except Exception:
-        logger.exception("Cloudinary upload failed")
-        raise HTTPException(status_code=500, detail="Image upload failed")
-
-# =====================================================
 # HISTORY
 # =====================================================
 @app.get("/history")
-def history(
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def history(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     records = (
         db.query(EmotionHistory)
         .filter(EmotionHistory.user_id == user.id)
@@ -324,7 +279,7 @@ def history(
     ]
 
 # =====================================================
-# 🧠 PREDICT + EMERGENCY EMAIL ALERT
+# 🧠 PREDICT + SAFE EMERGENCY EMAIL
 # =====================================================
 @app.post("/predict")
 async def predict_emotion_api(
@@ -363,7 +318,12 @@ async def predict_emotion_api(
 
     emergency_triggered = False
 
-    if emotion == "Suicidal" and user.alerts_enabled and user.emergency_email:
+    if (
+        emotion == "Suicidal"
+        and user.alerts_enabled
+        and user.emergency_email
+        and not user.alert_sent
+    ):
 
         suicidal_count = (
             db.query(EmotionHistory)
@@ -374,26 +334,29 @@ async def predict_emotion_api(
             .count()
         )
 
-        if suicidal_count == 3:
+        if suicidal_count >= 3:
 
-            message = MessageSchema(
-                subject="🚨 Emergency Mental Health Alert",
-                recipients=[user.emergency_email],
-                body=f"""
+            if mail_conf:
+                message = MessageSchema(
+                    subject="🚨 Emergency Mental Health Alert",
+                    recipients=[user.emergency_email],
+                    body=f"""
 Emergency Alert:
 
-{user.name or user.email} has shown repeated suicidal risk indicators
-inside the Mental Health Monitoring App (3 times).
+{user.name or user.email} has triggered repeated suicidal indicators.
 
 Please check on them immediately.
 
 This is an automated safety alert.
-                """,
-                subtype="plain",
-            )
+                    """,
+                    subtype="plain",
+                )
 
-            fm = FastMail(mail_conf)
-            await fm.send_message(message)
+                fm = FastMail(mail_conf)
+                await fm.send_message(message)
+
+            user.alert_sent = True
+            db.commit()
 
             emergency_triggered = True
 
