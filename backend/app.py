@@ -98,7 +98,7 @@ if MAIL_USERNAME and MAIL_PASSWORD and MAIL_FROM:
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
-    version="9.2.0",
+    version="9.2.1",
 )
 
 # =====================================================
@@ -229,33 +229,6 @@ def profile(user: User = Depends(get_current_user), db: Session = Depends(get_db
     }
 
 # =====================================================
-# UPDATE PROFILE
-# =====================================================
-@app.put("/profile")
-def update_profile(
-    profile: ProfileUpdate,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    if profile.name is not None:
-        user.name = profile.name
-    if profile.email is not None:
-        user.email = profile.email
-    if profile.password is not None:
-        user.password = hash_password(profile.password)
-    if profile.emergency_name is not None:
-        user.emergency_name = profile.emergency_name
-    if profile.emergency_email is not None:
-        user.emergency_email = profile.emergency_email
-    if profile.alerts_enabled is not None:
-        user.alerts_enabled = profile.alerts_enabled
-
-    db.commit()
-    db.refresh(user)
-
-    return {"message": "Profile updated successfully"}
-
-# =====================================================
 # HISTORY
 # =====================================================
 @app.get("/history")
@@ -337,10 +310,11 @@ async def predict_emotion_api(
         if suicidal_count >= 3:
 
             if mail_conf:
-                message = MessageSchema(
-                    subject="🚨 Emergency Mental Health Alert",
-                    recipients=[user.emergency_email],
-                    body=f"""
+                try:
+                    message = MessageSchema(
+                        subject="🚨 Emergency Mental Health Alert",
+                        recipients=[user.emergency_email],
+                        body=f"""
 Emergency Alert:
 
 {user.name or user.email} has triggered repeated suicidal indicators.
@@ -348,17 +322,19 @@ Emergency Alert:
 Please check on them immediately.
 
 This is an automated safety alert.
-                    """,
-                    subtype="plain",
-                )
+                        """,
+                        subtype="plain",
+                    )
 
-                fm = FastMail(mail_conf)
-                await fm.send_message(message)
+                    fm = FastMail(mail_conf)
+                    await fm.send_message(message)
+                    emergency_triggered = True
+
+                except Exception as e:
+                    logger.error(f"Email sending failed: {e}")
 
             user.alert_sent = True
             db.commit()
-
-            emergency_triggered = True
 
     return {
         "emotion": emotion,
