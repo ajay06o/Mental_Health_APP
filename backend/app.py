@@ -308,6 +308,53 @@ def history(
         for r in records
     ]
 
+    # =====================================================
+# 🧠 PREDICT EMOTION
+# =====================================================
+@app.post("/predict")
+def predict_emotion_api(
+    data: EmotionCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not data.text or not data.text.strip():
+        raise HTTPException(status_code=400, detail="Text cannot be empty")
+
+    # Run AI model
+    result = final_prediction(data.text)
+
+    emotion = result["final_mental_state"]
+    confidence = result["confidence"]
+
+    # Basic severity mapping
+    severity_map = {
+        "Happy": 1,
+        "Sad": 2,
+        "Angry": 2,
+        "Anxiety": 3,
+        "Depression": 4,
+        "Suicidal": 5,
+    }
+
+    severity = severity_map.get(emotion, 1)
+
+    # Save to DB
+    history_entry = EmotionHistory(
+        user_id=user.id,
+        emotion=emotion,
+        confidence=confidence,
+        severity=severity,
+    )
+
+    db.add(history_entry)
+    db.commit()
+
+    return {
+        "emotion": emotion,
+        "confidence": confidence,
+        "severity": severity,
+    }
+
 # =====================================================
 # DELETE HISTORY ITEM
 # =====================================================
