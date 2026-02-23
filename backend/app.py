@@ -228,6 +228,52 @@ def profile(user: User = Depends(get_current_user), db: Session = Depends(get_db
         "alerts_enabled": user.alerts_enabled,
     }
 
+    # =====================================================
+# 🖼 CLOUDINARY PROFILE IMAGE UPLOAD
+# =====================================================
+@app.post("/profile/upload-image")
+def upload_profile_image(
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    allowed_extensions = ["jpg", "jpeg", "png", "webp"]
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Invalid file")
+
+    file_extension = file.filename.split(".")[-1].lower()
+
+    if file_extension not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail="Only JPG, JPEG, PNG, WEBP images allowed",
+        )
+
+    try:
+        upload_result = cloudinary.uploader.upload(
+            file.file,
+            folder="mental_health_profiles",
+            public_id=f"user_{user.id}",
+            overwrite=True,
+            transformation=[{"width": 400, "height": 400, "crop": "fill"}],
+        )
+
+        image_url = upload_result.get("secure_url")
+
+        if not image_url:
+            raise HTTPException(status_code=500, detail="Upload failed")
+
+        user.profile_image = image_url
+        db.commit()
+        db.refresh(user)
+
+        return {"profile_image": image_url}
+
+    except Exception as e:
+        logger.error(f"Cloudinary upload failed: {e}")
+        raise HTTPException(status_code=500, detail="Image upload failed")
+
 # =====================================================
 # HISTORY
 # =====================================================
