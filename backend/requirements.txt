@@ -35,3 +35,5 @@ cryptography>=42.0.0
 apscheduler>=3.10.4
 requests>=2.31.0
 cloudinary
+fastapi-mail
+twilio

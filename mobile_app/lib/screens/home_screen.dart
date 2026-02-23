@@ -243,7 +243,7 @@ class _HomeScreenState extends State<HomeScreen>
                               MainAxisAlignment.spaceBetween,
                           children: const [
                             Text(
-                              "AI Dashboard 🌿",
+                              "Dashboard 🌿",
                               style: TextStyle(
                                 fontSize: 22,
                                 fontWeight: FontWeight.w700,

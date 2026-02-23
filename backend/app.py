@@ -5,6 +5,7 @@ import os
 import sys
 import logging
 
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(BASE_DIR)
 
@@ -29,6 +30,9 @@ from sqlalchemy import func
 
 import cloudinary
 import cloudinary.uploader
+from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
+from twilio.rest import Client
+from pydantic import EmailStr
 
 from database import engine
 from dependencies import get_db
@@ -311,8 +315,11 @@ def history(
     # =====================================================
 # 🧠 PREDICT EMOTION
 # =====================================================
+# =====================================================
+# 🧠 PREDICT + EMERGENCY EMAIL ALERT
+# =====================================================
 @app.post("/predict")
-def predict_emotion_api(
+async def predict_emotion_api(
     data: EmotionCreate,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -320,13 +327,11 @@ def predict_emotion_api(
     if not data.text or not data.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
-    # Run AI model
     result = final_prediction(data.text)
 
     emotion = result["final_mental_state"]
     confidence = result["confidence"]
 
-    # Basic severity mapping
     severity_map = {
         "Happy": 1,
         "Sad": 2,
@@ -338,7 +343,7 @@ def predict_emotion_api(
 
     severity = severity_map.get(emotion, 1)
 
-    # Save to DB
+    # Save to database
     history_entry = EmotionHistory(
         user_id=user.id,
         emotion=emotion,
@@ -349,10 +354,51 @@ def predict_emotion_api(
     db.add(history_entry)
     db.commit()
 
+    emergency_triggered = False
+
+    # =====================================================
+    # 🚨 EMERGENCY EMAIL LOGIC
+    # =====================================================
+    if emotion == "Suicidal" and user.alerts_enabled and user.emergency_email:
+
+        suicidal_count = (
+            db.query(EmotionHistory)
+            .filter(
+                EmotionHistory.user_id == user.id,
+                EmotionHistory.emotion == "Suicidal",
+            )
+            .count()
+        )
+
+        # Send email ONLY when count reaches 3
+        if suicidal_count == 3:
+
+            message = MessageSchema(
+                subject="🚨 Emergency Mental Health Alert",
+                recipients=[user.emergency_email],
+                body=f"""
+Emergency Alert:
+
+{user.name or user.email} has shown repeated suicidal risk indicators
+inside the Mental Health Monitoring App (3 times).
+
+Please check on them immediately.
+
+This is an automated safety alert.
+                """,
+                subtype="plain",
+            )
+
+            fm = FastMail(mail_conf)
+            await fm.send_message(message)
+
+            emergency_triggered = True
+
     return {
         "emotion": emotion,
         "confidence": confidence,
         "severity": severity,
+        "emergency_triggered": emergency_triggered,
     }
 
 # =====================================================
