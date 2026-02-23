@@ -23,7 +23,8 @@ final GoRouter appRouter = GoRouter(
   navigatorKey: rootNavigatorKey,
   initialLocation: "/splash",
 
-  /// 🔄 This makes router reactive
+  debugLogDiagnostics: true, // ✅ Safe improvement
+
   refreshListenable: authNotifier,
 
   redirect: (context, state) {
@@ -50,6 +51,15 @@ final GoRouter appRouter = GoRouter(
 
     return null;
   },
+
+  errorBuilder: (context, state) => Scaffold(   // ✅ Prevent crash on bad route
+    body: Center(
+      child: Text(
+        "Page not found",
+        style: Theme.of(context).textTheme.titleLarge,
+      ),
+    ),
+  ),
 
   routes: [
     // ================= SPLASH =================
@@ -96,18 +106,18 @@ final GoRouter appRouter = GoRouter(
         const SettingsScreen(),
       ),
     ),
-
-    // Social connect route removed
   ],
 );
 
-/// 🔥 Smooth Fade Transition
+/// 🔥 Smooth Fade Transition (Improved timing)
 CustomTransitionPage _buildPage(
   GoRouterState state,
   Widget child,
 ) {
   return CustomTransitionPage(
     key: state.pageKey,
+    transitionDuration: const Duration(milliseconds: 250), // ✅ smoother feel
+    reverseTransitionDuration: const Duration(milliseconds: 200),
     child: child,
     transitionsBuilder:
         (context, animation, secondaryAnimation, child) {

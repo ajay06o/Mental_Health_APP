@@ -4,7 +4,6 @@
 import os
 import sys
 import logging
-import shutil
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(BASE_DIR)
@@ -25,9 +24,11 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+
+import cloudinary
+import cloudinary.uploader
 
 from database import engine
 from dependencies import get_db
@@ -60,20 +61,21 @@ logger = logging.getLogger("mental_health_api")
 models.Base.metadata.create_all(bind=engine)
 
 # =====================================================
+# CLOUDINARY CONFIG
+# =====================================================
+cloudinary.config(
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+)
+
+# =====================================================
 # FASTAPI APP
 # =====================================================
 app = FastAPI(
     title="Mental Health Detection API",
     version="9.0.0",
 )
-
-# =====================================================
-# 📁 PROFILE IMAGE UPLOAD CONFIG
-# =====================================================
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 # =====================================================
 # ROOT
@@ -218,19 +220,14 @@ def update_profile(
 ):
     if profile.name is not None:
         user.name = profile.name
-
     if profile.email is not None:
         user.email = profile.email
-
     if profile.password is not None:
         user.password = hash_password(profile.password)
-
     if profile.emergency_name is not None:
         user.emergency_name = profile.emergency_name
-
     if profile.emergency_email is not None:
         user.emergency_email = profile.emergency_email
-
     if profile.alerts_enabled is not None:
         user.alerts_enabled = profile.alerts_enabled
 
@@ -240,7 +237,7 @@ def update_profile(
     return {"message": "Profile updated successfully"}
 
 # =====================================================
-# 🖼 UPLOAD PROFILE IMAGE
+# 🖼 CLOUDINARY PROFILE IMAGE UPLOAD
 # =====================================================
 @app.post("/profile/upload-image")
 def upload_profile_image(
@@ -248,8 +245,6 @@ def upload_profile_image(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-
-    # ✅ Validate by extension instead of content_type
     allowed_extensions = ["jpg", "jpeg", "png", "webp"]
 
     if not file.filename:
@@ -263,20 +258,29 @@ def upload_profile_image(
             detail="Only JPG, JPEG, PNG, WEBP images allowed",
         )
 
-    filename = f"user_{user.id}.{file_extension}"
-    file_path = os.path.join(UPLOAD_DIR, filename)
+    try:
+        upload_result = cloudinary.uploader.upload(
+            file.file,
+            folder="mental_health_profiles",
+            public_id=f"user_{user.id}",
+            overwrite=True,
+            transformation=[{"width": 400, "height": 400, "crop": "fill"}],
+        )
 
-    # Save file safely
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+        image_url = upload_result.get("secure_url")
 
-    image_url = f"/uploads/{filename}"
+        if not image_url:
+            raise HTTPException(status_code=500, detail="Upload failed")
 
-    user.profile_image = image_url
-    db.commit()
-    db.refresh(user)
+        user.profile_image = image_url
+        db.commit()
+        db.refresh(user)
 
-    return {"profile_image": image_url}
+        return {"profile_image": image_url}
+
+    except Exception:
+        logger.exception("Cloudinary upload failed")
+        raise HTTPException(status_code=500, detail="Image upload failed")
 
 # =====================================================
 # HISTORY
@@ -295,7 +299,7 @@ def history(
 
     return [
         {
-            "id": r.id,  # ✅ Added ID (required for delete)
+            "id": r.id,
             "emotion": r.emotion,
             "confidence": r.confidence,
             "severity": r.severity,
@@ -303,7 +307,6 @@ def history(
         }
         for r in records
     ]
-
 
 # =====================================================
 # DELETE HISTORY ITEM
@@ -330,65 +333,3 @@ def delete_history(
     db.commit()
 
     return {"message": "History deleted successfully"}
-
-# =====================================================
-# PREDICT
-# =====================================================
-@app.post("/predict")
-def predict(
-    data: EmotionCreate,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    if not data.text or not data.text.strip():
-        raise HTTPException(status_code=400, detail="Text cannot be empty")
-
-    text = data.text.strip().lower()
-
-    keyword_map = {
-        "happy": "happy",
-        "sad": "sad",
-        "angry": "angry",
-        "depressed": "depression",
-        "anxious": "anxiety",
-        "suicidal": "suicidal",
-    }
-
-    if text in keyword_map:
-        emotion = keyword_map[text]
-        confidence = 0.95
-    else:
-        result = final_prediction(text)
-        emotion = result.get("final_mental_state", "neutral")
-        confidence = float(result.get("confidence", 0.0))
-
-        if confidence < 0.4:
-            emotion = "neutral"
-
-    if emotion == "suicidal":
-        severity = 5
-    elif emotion in ["depression", "angry", "anxiety"]:
-        severity = 4
-    elif emotion == "sad":
-        severity = 3
-    elif emotion == "happy":
-        severity = 1
-    else:
-        severity = 2
-
-    record = EmotionHistory(
-        user_id=user.id,
-        platform="manual",
-        emotion=emotion,
-        confidence=confidence,
-        severity=severity,
-    )
-
-    db.add(record)
-    db.commit()
-
-    return {
-        "emotion": emotion,
-        "confidence": confidence,
-        "severity": severity,
-    }

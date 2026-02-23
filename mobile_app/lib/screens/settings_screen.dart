@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:go_router/go_router.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -86,6 +87,10 @@ class _SettingsScreenState extends State<SettingsScreen>
       extendBodyBehindAppBar: true,
       backgroundColor: Colors.transparent,
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => context.go("/home"), // ✅ Fixed safely
+        ),
         title: const Text(
           "Settings",
           style: TextStyle(
@@ -114,7 +119,6 @@ class _SettingsScreenState extends State<SettingsScreen>
             padding: const EdgeInsets.all(16),
             children: [
 
-              // 🔐 Security
               _buildSectionTitle("Security"),
               _buildCard(
                 child: SwitchListTile(
@@ -134,7 +138,6 @@ class _SettingsScreenState extends State<SettingsScreen>
 
               const SizedBox(height: 24),
 
-              // 🔹 Account
               _buildSectionTitle("Account"),
               _buildCard(
                 child: Column(
