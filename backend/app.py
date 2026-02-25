@@ -130,6 +130,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://mental-health-app-zpng.onrender.com",
+        "http://localhost:3000",
+        "http://localhost:5000",
+        "http://localhost:8080",
+        "http://localhost:59491",
     ],
     allow_origin_regex=r"http://localhost:\d+",
     allow_credentials=True,
