@@ -22,7 +22,7 @@ dependencies:
   logger: ^2.0.2
   google_fonts: ^6.1.0
   lottie: ^2.7.0
-  uni_links: ^0.5.1
+  app_links: ^3.4.5
   flutter_web_auth_2: ^3.0.0
   workmanager: ^0.5.2
   image_picker: ^1.0.4

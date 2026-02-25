@@ -7,7 +7,7 @@ import 'auth_service.dart';
 
 class PredictService {
   // =====================================================
-  // 🧠 PREDICT EMOTION
+  // 🧠 PREDICT EMOTION (FULLY UPDATED + BACKWARD SAFE)
   // =====================================================
   static Future<Map<String, dynamic>> predictEmotion(String text) async {
     if (text.trim().isEmpty) {
@@ -26,14 +26,67 @@ class PredictService {
       );
 
       if (decoded is Map<String, dynamic>) {
+        final String emotion =
+            decoded["emotion"] ?? "Neutral";
+
+        final double confidence =
+            (decoded["confidence"] is num)
+                ? (decoded["confidence"] as num).toDouble()
+                : 0.5;
+
+        final String severityString =
+            decoded["severity"] ?? "low";
+
+        final String risk =
+            decoded["risk"] ?? "low";
+
+        final int mhi =
+            (decoded["mental_health_index"] is num)
+                ? (decoded["mental_health_index"] as num).toInt()
+                : 70;
+
+        final bool emergencyTriggered =
+            decoded["emergency_triggered"] ?? false;
+
+        // -------------------------------------------------
+        // 🔁 BACKWARD COMPATIBILITY
+        // Convert severity string → old int scale (1–5)
+        // -------------------------------------------------
+        int severityInt;
+
+        switch (emotion) {
+          case "Suicidal":
+            severityInt = 5;
+            break;
+          case "Depression":
+            severityInt = 4;
+            break;
+          case "Anxiety":
+            severityInt = 3;
+            break;
+          case "Sad":
+          case "Angry":
+            severityInt = 2;
+            break;
+          case "Happy":
+            severityInt = 1;
+            break;
+          default:
+            severityInt = 1;
+        }
+
         return {
-          "emotion": decoded["emotion"] ?? "neutral",
-          "confidence": (decoded["confidence"] is num)
-              ? (decoded["confidence"] as num).toDouble()
-              : 0.5,
-          "severity": decoded["severity"] ?? 1,
-          "timestamp":
-              decoded["timestamp"] ?? DateTime.now().toIso8601String(),
+          // Old fields (DO NOT REMOVE)
+          "emotion": emotion,
+          "confidence": confidence,
+          "severity": severityInt,
+          "timestamp": DateTime.now().toIso8601String(),
+
+          // 🆕 New Dynamic Fields
+          "severity_label": severityString,
+          "risk": risk,
+          "mental_health_index": mhi,
+          "emergency_triggered": emergencyTriggered,
         };
       }
 
@@ -43,11 +96,18 @@ class PredictService {
     }
   }
 
+  // =====================================================
+  // 🛟 SAFE FALLBACK (FULLY COMPATIBLE)
+  // =====================================================
   static Map<String, dynamic> _safePredictFallback() {
     return {
-      "emotion": "neutral",
+      "emotion": "Neutral",
       "confidence": 0.3,
       "severity": 1,
+      "severity_label": "low",
+      "risk": "low",
+      "mental_health_index": 70,
+      "emergency_triggered": false,
       "timestamp": DateTime.now().toIso8601String(),
     };
   }
@@ -170,7 +230,7 @@ class PredictService {
   }
 
   // =====================================================
-  // 🖼 UPLOAD PROFILE IMAGE (WEB + MOBILE SAFE)
+  // 🖼 UPLOAD PROFILE IMAGE
   // =====================================================
   static Future<String?> uploadProfileImage(dynamic image) async {
     try {

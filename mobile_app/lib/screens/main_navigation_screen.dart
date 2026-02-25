@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:ui';
 
 import 'home_screen.dart';
@@ -18,10 +17,8 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen>
     with SingleTickerProviderStateMixin {
-  static const String _tabKey = "last_tab_index";
 
-  int _currentIndex = 0;
-  bool _isRestoring = true;
+  int _currentIndex = 0; // ✅ Always start on Home
 
   final PageStorageBucket _bucket = PageStorageBucket();
 
@@ -32,52 +29,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     ProfileScreen(key: PageStorageKey("profile_scroll")),
   ];
 
-  @override
-  void initState() {
-    super.initState();
-    _restoreLastTab();
-  }
-
-  // ==============================
-  // RESTORE TAB
-  // ==============================
-  Future<void> _restoreLastTab() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedIndex = prefs.getInt(_tabKey);
-
-    if (savedIndex != null &&
-        savedIndex >= 0 &&
-        savedIndex < _screens.length) {
-      if (!mounted) return;
-      _currentIndex = savedIndex;
-    }
-
-    if (!mounted) return;
-    setState(() => _isRestoring = false);
-  }
-
-  // ==============================
-  // SAVE TAB
-  // ==============================
-  Future<void> _saveLastTab(int index) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_tabKey, index);
-  }
-
   void _onTabSelected(int index) {
     if (index == _currentIndex) return;
 
     HapticFeedback.lightImpact();
-
     setState(() => _currentIndex = index);
-    _saveLastTab(index);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-  extendBody: true,
-  backgroundColor: Colors.transparent,
+      extendBody: true,
+      backgroundColor: Colors.transparent,
       body: PageStorage(
         bucket: _bucket,
         child: AnimatedSwitcher(
@@ -96,15 +59,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
               ),
             );
           },
-          child: _isRestoring
-              ? const Center(child: CircularProgressIndicator())
-              : IndexedStack(
-                  key: ValueKey<int>(_currentIndex),
-                  index: _currentIndex,
-                  children: _screens,
-              ),
+          child: IndexedStack(
+            key: ValueKey<int>(_currentIndex),
+            index: _currentIndex,
+            children: _screens,
+          ),
         ),
       ),
+
       // 🔥 Modern Bottom Navigation
       bottomNavigationBar: SafeArea(
         top: false,

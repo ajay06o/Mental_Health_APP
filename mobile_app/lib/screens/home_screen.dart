@@ -24,16 +24,28 @@ class _HomeScreenState extends State<HomeScreen>
     with TickerProviderStateMixin {
   final TextEditingController _controller = TextEditingController();
   final List<TrendPoint> _points = [];
+  static List<TrendPoint>? _cachedPoints;
 
   bool _loading = false;
   String? _currentEmotion;
+
+  // 🆕 NEW DYNAMIC FIELDS (DOES NOT AFFECT OLD CODE)
+  String? _risk;
+  int? _mhi;
 
   late AnimationController _bgController;
 
   @override
   void initState() {
     super.initState();
-    _loadHistory();
+
+    if (_cachedPoints != null) {
+      _points.addAll(_cachedPoints!);
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadHistory();
+    });
 
     _bgController = AnimationController(
       vsync: this,
@@ -48,31 +60,57 @@ class _HomeScreenState extends State<HomeScreen>
     super.dispose();
   }
 
-  // =============================
-  // LOAD HISTORY
-  // =============================
+  DateTime? _parseTimestamp(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+
+    try {
+      final parsed = DateTime.parse(raw);
+      return parsed.isUtc ? parsed.toLocal() : parsed;
+    } catch (_) {
+      try {
+        final parsed =
+            DateFormat("yyyy-MM-dd HH:mm:ss").parseUtc(raw);
+        return parsed.toLocal();
+      } catch (_) {
+        debugPrint("Invalid timestamp: $raw");
+        return null;
+      }
+    }
+  }
+
   Future<void> _loadHistory() async {
     try {
       final data = await PredictService.fetchHistory();
 
-      _points
-        ..clear()
-        ..addAll(data.map(
-          (e) => TrendPoint(
-            e["emotion"] ?? "unknown",
-            DateTime.tryParse(e["timestamp"] ?? "") ??
-                DateTime.now(),
-          ),
-        ));
+      final loadedPoints = <TrendPoint>[];
 
-      _points.sort((a, b) => a.time.compareTo(b.time));
-      if (mounted) setState(() {});
+      for (final e in data) {
+        final raw = e["created_at"];
+        if (raw != null) {
+          final parsed = DateTime.parse(raw);
+          loadedPoints.add(
+            TrendPoint(
+              e["emotion"] ?? "unknown",
+              parsed.isUtc ? parsed.toLocal() : parsed,
+            ),
+          );
+        }
+      }
+
+      loadedPoints.sort((a, b) => a.time.compareTo(b.time));
+
+      if (!mounted) return;
+
+      setState(() {
+        _points
+          ..clear()
+          ..addAll(loadedPoints);
+
+        _cachedPoints = List.from(loadedPoints);
+      });
     } catch (_) {}
   }
 
-  // =============================
-  // ANALYZE
-  // =============================
   Future<void> _analyze() async {
     final text = _controller.text.trim();
     if (text.isEmpty || _loading) return;
@@ -84,19 +122,27 @@ class _HomeScreenState extends State<HomeScreen>
           await PredictService.predictEmotion(text);
 
       final emotion = result["emotion"] ?? "unknown";
+      final parsedTime =
+          _parseTimestamp(result["timestamp"]);
 
-      _points.add(
-        TrendPoint(
-          emotion,
-          DateTime.tryParse(result["timestamp"] ?? "") ??
-              DateTime.now(),
-        ),
-      );
+      if (parsedTime != null) {
+        _points.add(
+          TrendPoint(
+            emotion,
+            parsedTime,
+          ),
+        );
+      }
 
       if (!mounted) return;
 
       setState(() {
         _currentEmotion = emotion;
+
+        // 🆕 NEW DATA (DOES NOT BREAK OLD LOGIC)
+        _risk = result["risk"];
+        _mhi = result["mental_health_index"];
+
         _controller.clear();
         _loading = false;
       });
@@ -105,9 +151,6 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  // =============================
-  // SEVERITY
-  // =============================
   double _severity(String emotion) {
     switch (emotion.toLowerCase()) {
       case "happy":
@@ -117,10 +160,12 @@ class _HomeScreenState extends State<HomeScreen>
       case "anxiety":
       case "stress":
         return 3;
-      case "depression":
+      case "angry":
         return 4;
-      case "suicidal":
+      case "depression":
         return 5;
+      case "suicidal":
+        return 6;
       default:
         return 2.5;
     }
@@ -134,6 +179,8 @@ class _HomeScreenState extends State<HomeScreen>
         return "😔";
       case "anxiety":
         return "😰";
+      case "angry":
+        return "😡";
       case "depression":
         return "💔";
       case "suicidal":
@@ -143,67 +190,146 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  // =============================
-  // TREND DIRECTION
-  // =============================
-  String _trendDirection() {
-    if (_points.length < 2) return "stable";
+  Widget _mhiCard() {
+    if (_mhi == null) return const SizedBox();
 
-    final last = _severity(_points.last.emotion);
-    final prev = _severity(_points[_points.length - 2].emotion);
-
-    if (last > prev) return "worsening";
-    if (last < prev) return "improving";
-    return "stable";
-  }
-
-  Widget _trendIndicator() {
-    if (_points.length < 2) return const SizedBox();
-
-    final trend = _trendDirection();
-
-    IconData icon;
     Color color;
-    String text;
+    String status;
 
-    switch (trend) {
-      case "improving":
-        icon = Icons.trending_up;
-        color = Colors.green;
-        text = "Improving";
-        break;
-      case "worsening":
-        icon = Icons.trending_down;
-        color = Colors.red;
-        text = "Worsening";
-        break;
-      default:
-        icon = Icons.trending_flat;
-        color = Colors.orange;
-        text = "Stable";
+    if (_mhi! >= 70) {
+      color = Colors.green;
+      status = "Healthy";
+    } else if (_mhi! >= 40) {
+      color = Colors.orange;
+      status = "Needs Attention";
+    } else {
+      color = Colors.red;
+      status = "Critical";
     }
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          Icon(icon, color: color),
-          const SizedBox(width: 6),
-          Text(
-            text,
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.w600,
+      padding: const EdgeInsets.only(top: 14),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: BackdropFilter(
+          filter:
+              ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+                horizontal: 18, vertical: 16),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.97),
+              borderRadius:
+                  BorderRadius.circular(18),
+            ),
+            child: Row(
+              mainAxisAlignment:
+                  MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment:
+                      CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Mental Health Index",
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight:
+                            FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      "$_mhi / 100",
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight:
+                            FontWeight.bold,
+                        color: color,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      status,
+                      style: TextStyle(
+                        color: color,
+                        fontWeight:
+                            FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                if (_risk != null)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6),
+                    decoration: BoxDecoration(
+                      color:
+                          color.withOpacity(0.15),
+                      borderRadius:
+                          BorderRadius.circular(
+                              12),
+                    ),
+                    child: Text(
+                      _risk!.toUpperCase(),
+                      style: TextStyle(
+                        color: color,
+                        fontWeight:
+                            FontWeight.w700,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
 
-  // =============================
-  // UI
-  // =============================
+  Widget _emotionCard() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: BackdropFilter(
+        filter:
+            ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        child: Container(
+          padding:
+              const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 16),
+          decoration: BoxDecoration(
+            color:
+                Colors.white.withOpacity(0.97),
+            borderRadius:
+                BorderRadius.circular(18),
+          ),
+          child: Row(
+            children: [
+              Text(
+                _emoji(_currentEmotion!),
+                style:
+                    const TextStyle(fontSize: 30),
+              ),
+              const SizedBox(width: 14),
+              Text(
+                _currentEmotion!.toUpperCase(),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight:
+                      FontWeight.w700,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -211,77 +337,53 @@ class _HomeScreenState extends State<HomeScreen>
         animation: _bgController,
         builder: (_, __) {
           return Container(
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               gradient: LinearGradient(
-                begin: Alignment(
-                  -1 + _bgController.value * 2,
-                  -1,
-                ),
-                end: Alignment(
-                  1,
-                  1 - _bgController.value * 2,
-                ),
-                colors: const [
+                colors: [
                   Color(0xFF7A6FF0),
                   Color(0xFF5C9EFF),
                 ],
               ),
             ),
             child: SafeArea(
-              child: Stack(
-                children: [
-                  Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 20),
-                    child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 20),
+                child: Column(
+                  crossAxisAlignment:
+                      CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 20),
+                    const Row(
+                      mainAxisAlignment:
+                          MainAxisAlignment
+                              .spaceBetween,
                       children: [
-                        const SizedBox(height: 20),
-                        Row(
-                          mainAxisAlignment:
-                              MainAxisAlignment.spaceBetween,
-                          children: const [
-                            Text(
-                              "Dashboard 🌿",
-                              style: TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                              ),
-                            ),
-                            AppLogo(size: 32),
-                          ],
+                        Text(
+                          "Dashboard 🌿",
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight:
+                                FontWeight.w700,
+                            color:
+                                Colors.white,
+                          ),
                         ),
-                        const SizedBox(height: 24),
-
-                        _glassInput(),
-                        const SizedBox(height: 14),
-                        _analyzeButton(),
-
-                        const SizedBox(height: 20),
-
-                        if (_currentEmotion != null)
-                          _emotionCard(),
-
-                        const SizedBox(height: 20),
-
-                        Expanded(child: _graph()),
+                        AppLogo(size: 32),
                       ],
                     ),
-                  ),
-                  if (_loading)
-                    Container(
-                      color:
-                          Colors.black.withOpacity(0.3),
-                      child: const Center(
-                        child:
-                            CircularProgressIndicator(
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                ],
+                    const SizedBox(height: 24),
+                    _glassInput(),
+                    const SizedBox(height: 14),
+                    _analyzeButton(),
+                    const SizedBox(height: 20),
+                    if (_currentEmotion != null)
+                      _emotionCard(),
+                    _mhiCard(),
+                    const SizedBox(height: 20),
+                    Expanded(child: _graph()),
+                  ],
+                ),
               ),
             ),
           );
@@ -290,9 +392,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // =============================
-  // GLASS INPUT
-  // =============================
   Widget _glassInput() {
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
@@ -301,7 +400,8 @@ class _HomeScreenState extends State<HomeScreen>
             ImageFilter.blur(sigmaX: 15, sigmaY: 15),
         child: Container(
           padding:
-              const EdgeInsets.symmetric(horizontal: 16),
+              const EdgeInsets.symmetric(
+                  horizontal: 16),
           decoration: BoxDecoration(
             color:
                 Colors.white.withOpacity(0.9),
@@ -310,12 +410,13 @@ class _HomeScreenState extends State<HomeScreen>
           ),
           child: TextField(
             controller: _controller,
-            style:
-                const TextStyle(color: Colors.black),
             maxLines: 3,
-            decoration: const InputDecoration(
-              hintText: "Share how you feel...",
-              border: InputBorder.none,
+            decoration:
+                const InputDecoration(
+              hintText:
+                  "Share how you feel...",
+              border:
+                  InputBorder.none,
             ),
           ),
         ),
@@ -331,70 +432,31 @@ class _HomeScreenState extends State<HomeScreen>
         style: ElevatedButton.styleFrom(
           backgroundColor:
               const Color(0xFF6D5DF6),
-          shape: RoundedRectangleBorder(
+          shape:
+              RoundedRectangleBorder(
             borderRadius:
                 BorderRadius.circular(18),
           ),
         ),
-        onPressed: _loading ? null : _analyze,
+        onPressed:
+            _loading ? null : _analyze,
         child: const Text(
           "Analyze",
-          style:
-              TextStyle(fontWeight: FontWeight.w600),
+          style: TextStyle(
+              fontWeight:
+                  FontWeight.w600),
         ),
       ),
     );
   }
 
-  Widget _emotionCard() {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-        child: Container(
-          padding:
-              const EdgeInsets.symmetric(
-                  horizontal: 18, vertical: 16),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.97),
-            borderRadius:
-                BorderRadius.circular(18),
-          ),
-          child: Row(
-            children: [
-              Text(
-                _emoji(_currentEmotion!),
-                style:
-                    const TextStyle(fontSize: 30),
-              ),
-              const SizedBox(width: 14),
-              Text(
-                _currentEmotion!
-                    .toUpperCase(),
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight:
-                      FontWeight.w700,
-                  color: Colors.black87,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // =============================
-  // GRAPH (FINAL)
-  // =============================
   Widget _graph() {
     if (_points.length < 2) {
       return const Center(
         child: Text(
           "No trend data yet",
-          style:
-              TextStyle(color: Colors.white70),
+          style: TextStyle(
+              color: Colors.white70),
         ),
       );
     }
@@ -403,252 +465,25 @@ class _HomeScreenState extends State<HomeScreen>
       _points.length,
       (i) => FlSpot(
         i.toDouble(),
-        _severity(_points[i].emotion),
+        _severity(
+            _points[i].emotion),
       ),
     );
 
-    final lastIndex =
-        _points.length - 1;
-
-    return Column(
-      crossAxisAlignment:
-          CrossAxisAlignment.start,
-      children: [
-        _trendIndicator(),
-
-        Expanded(
-          child: ClipRRect(
-            borderRadius:
-                BorderRadius.circular(20),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(
-                  sigmaX: 15,
-                  sigmaY: 15),
-              child: Container(
-                padding:
-                    const EdgeInsets.fromLTRB(
-                        32, 28, 20, 28),
-                decoration:
-                    BoxDecoration(
-                  color: Colors.white
-                      .withOpacity(0.98),
-                  borderRadius:
-                      BorderRadius.circular(
-                          20),
-                ),
-                child: LineChart(
-                  LineChartData(
-                    minY: 0.8,
-                    maxY: 5.3,
-
-                    titlesData:
-                        FlTitlesData(
-                      leftTitles:
-                          AxisTitles(
-                        sideTitles:
-                            SideTitles(
-                          showTitles:
-                              true,
-                          reservedSize:
-                              44,
-                          interval: 1,
-                          getTitlesWidget:
-                              (value,
-                                  meta) {
-                            const style =
-                                TextStyle(
-                              fontSize:
-                                  18,
-                              color:
-                                  Colors
-                                      .black87,
-                            );
-
-                            switch (value
-                                .toInt()) {
-                              case 1:
-                                return const Text(
-                                    "😊",
-                                    style:
-                                        style);
-                              case 2:
-                                return const Text(
-                                    "😔",
-                                    style:
-                                        style);
-                              case 3:
-                                return const Text(
-                                    "😰",
-                                    style:
-                                        style);
-                              case 4:
-                                return const Text(
-                                    "💔",
-                                    style:
-                                        style);
-                              case 5:
-                                return const Text(
-                                    "🚨",
-                                    style:
-                                        style);
-                              default:
-                                return const SizedBox();
-                            }
-                          },
-                        ),
-                      ),
-                      topTitles:
-                          AxisTitles(
-                        sideTitles:
-                            SideTitles(
-                                showTitles:
-                                    false),
-                      ),
-                      rightTitles:
-                          AxisTitles(
-                        sideTitles:
-                            SideTitles(
-                                showTitles:
-                                    false),
-                      ),
-                      bottomTitles:
-                          AxisTitles(
-                        sideTitles:
-                            SideTitles(
-                                showTitles:
-                                    false),
-                      ),
-                    ),
-
-                    gridData:
-                        FlGridData(
-                      show: true,
-                      drawVerticalLine:
-                          false,
-                      horizontalInterval:
-                          1,
-                      getDrawingHorizontalLine:
-                          (value) {
-                        return FlLine(
-                          color: Colors.grey
-                              .withOpacity(
-                                  0.2),
-                          strokeWidth: 1,
-                        );
-                      },
-                    ),
-
-                    borderData:
-                        FlBorderData(
-                            show: false),
-
-                    lineTouchData:
-                        LineTouchData(
-                      touchTooltipData:
-                          LineTouchTooltipData(
-                        tooltipBgColor:
-                            Colors.black87,
-                        getTooltipItems:
-                            (touchedSpots) {
-                          return touchedSpots
-                              .map((spot) {
-                            final index =
-                                spot.x
-                                    .toInt();
-                            final emotion =
-                                _points[
-                                        index]
-                                    .emotion
-                                    .toUpperCase();
-                            final time =
-                                DateFormat(
-                                        "MMM d, HH:mm")
-                                    .format(
-                                        _points[
-                                                index]
-                                            .time);
-
-                            return LineTooltipItem(
-                              "$emotion\n$time",
-                              const TextStyle(
-                                color: Colors
-                                    .white,
-                                fontWeight:
-                                    FontWeight
-                                        .w600,
-                              ),
-                            );
-                          }).toList();
-                        },
-                      ),
-                    ),
-
-                  lineBarsData: [
-                      LineChartBarData(
-                        spots: spots,
-                        isCurved: true,
-                        barWidth: 3,
-                        color: const Color(
-                            0xFF6D5DF6),
-
-                        dotData:
-                            FlDotData(
-                          show: true,
-                          getDotPainter:
-                              (spot,
-                                  percent,
-                                  bar,
-                                  index) {
-                            if (index ==
-                                lastIndex) {
-                              return FlDotCirclePainter(
-                                radius: 6,
-                                color: const Color(
-                                    0xFF6D5DF6),
-                                strokeWidth:
-                                    4,
-                                strokeColor:
-                                    Colors
-                                        .white,
-                              );
-                            }
-                            return FlDotCirclePainter(
-                              radius: 3,
-                              color: const Color(
-                                  0xFF6D5DF6),
-                            );
-                          },
-                        ),
-
-                        belowBarData:
-                            BarAreaData(
-                          show: true,
-                          gradient:
-                              LinearGradient(
-                            colors: [
-                              const Color(
-                                      0xFF6D5DF6)
-                                  .withOpacity(
-                                      0.15),
-                              Colors
-                                  .transparent,
-                            ],
-                            begin:
-                                Alignment
-                                    .topCenter,
-                            end: Alignment
-                                .bottomCenter,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+    return LineChart(
+      LineChartData(
+        minY: 0.8,
+        maxY: 6.2,
+        lineBarsData: [
+          LineChartBarData(
+            spots: spots,
+            isCurved: true,
+            barWidth: 4,
+            color:
+                const Color(0xFF6D5DF6),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

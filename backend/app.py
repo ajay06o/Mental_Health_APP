@@ -209,24 +209,25 @@ def profile(user: User = Depends(get_current_user), db: Session = Depends(get_db
         .scalar() or 0
     )
 
-    avg_severity = (
-        db.query(func.avg(EmotionHistory.severity))
-        .filter(EmotionHistory.user_id == user.id)
-        .scalar() or 0
-    )
+    avg_mhi = (
+    db.query(func.avg(EmotionHistory.mental_health_index))
+    .filter(EmotionHistory.user_id == user.id)
+    .scalar() or 0
+)
 
     return {
-        "user_id": user.id,
-        "name": user.name,
-        "email": user.email,
-        "profile_image": user.profile_image,
-        "total_entries": total_entries,
-        "avg_severity": float(avg_severity or 0),
-        "high_risk": (avg_severity or 0) >= 3.5,
-        "emergency_email": user.emergency_email,
-        "emergency_name": user.emergency_name,
-        "alerts_enabled": user.alerts_enabled,
-    }
+    "user_id": user.id,
+    "name": user.name,
+    "email": user.email,
+    "profile_image": user.profile_image,
+    "total_entries": total_entries,
+    "avg_mhi": float(avg_mhi or 0),
+    "high_risk": (avg_mhi or 0) < 30,
+    "emergency_email": user.emergency_email,
+    "emergency_name": user.emergency_name,
+    "alerts_enabled": user.alerts_enabled,
+}
+
 
     # =====================================================
 # 🖼 CLOUDINARY PROFILE IMAGE UPLOAD
@@ -287,18 +288,24 @@ def history(user: User = Depends(get_current_user), db: Session = Depends(get_db
     )
 
     return [
-        {
-            "id": r.id,
-            "emotion": r.emotion,
-            "confidence": r.confidence,
-            "severity": r.severity,
-            "created_at": r.timestamp.isoformat() if r.timestamp else None,
-        }
-        for r in records
-    ]
+    {
+        "id": r.id,
+        "emotion": r.emotion,
+        "confidence": r.confidence,
+        "severity": r.severity,
+        "risk": r.risk,
+        "mental_health_index": r.mental_health_index,
+        "text": r.text,
+        "created_at": r.timestamp.isoformat() if r.timestamp else None,
+    }
+    for r in records
+]
 
 # =====================================================
 # 🧠 PREDICT + SAFE EMERGENCY EMAIL
+# =====================================================
+# =====================================================
+# 🧠 PREDICT + SAFE EMERGENCY EMAIL (UPDATED)
 # =====================================================
 @app.post("/predict")
 async def predict_emotion_api(
@@ -313,23 +320,20 @@ async def predict_emotion_api(
 
     emotion = result["final_mental_state"]
     confidence = result["confidence"]
+    severity = result["severity"]          # string
+    risk = result["risk"]                  # string
+    mental_health_index = result["mental_health_index"]
 
-    severity_map = {
-        "Happy": 1,
-        "Sad": 2,
-        "Angry": 2,
-        "Anxiety": 3,
-        "Depression": 4,
-        "Suicidal": 5,
-    }
-
-    severity = severity_map.get(emotion, 1)
-
+    # Save to DB
     history_entry = EmotionHistory(
         user_id=user.id,
         emotion=emotion,
         confidence=confidence,
         severity=severity,
+        risk=risk,
+        mental_health_index=mental_health_index,
+        text=data.text,
+        platform="manual",
     )
 
     db.add(history_entry)
@@ -337,13 +341,13 @@ async def predict_emotion_api(
 
     emergency_triggered = False
 
+    # 🚨 Emergency trigger logic
     if (
         emotion == "Suicidal"
         and user.alerts_enabled
         and user.emergency_email
         and not user.alert_sent
     ):
-
         suicidal_count = (
             db.query(EmotionHistory)
             .filter(
@@ -386,6 +390,8 @@ This is an automated safety alert.
         "emotion": emotion,
         "confidence": confidence,
         "severity": severity,
+        "risk": risk,
+        "mental_health_index": mental_health_index,
         "emergency_triggered": emergency_triggered,
     }
 

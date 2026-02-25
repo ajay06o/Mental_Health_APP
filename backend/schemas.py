@@ -83,14 +83,51 @@ class EmotionCreate(BaseModel):
         return value
 
 
+# =====================================================
+# EMOTION RESPONSE (UPDATED FOR DYNAMIC DETECTION)
+# =====================================================
+
 class EmotionResponse(BaseModel):
-    emotion: str = Field(..., example="anxiety")
-    confidence: float = Field(..., ge=0.0, le=1.0, example=0.87)
-    severity: int = Field(..., ge=1, le=5, example=3)
-    timestamp: datetime = Field(..., example="2026-01-29T10:15:30Z")
+    emotion: str = Field(..., example="Depression")
+
+    confidence: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        example=0.87
+    )
+
+    # 🔥 Changed from int → str (low/medium/high)
+    severity: str = Field(
+        ...,
+        example="high",
+        description="Severity level (low / medium / high)",
+    )
+
+    # 🆕 Risk level
+    risk: str = Field(
+        ...,
+        example="moderate",
+        description="Risk classification (low / moderate / high / critical)",
+    )
+
+    # 🧠 Mental Health Index
+    mental_health_index: int = Field(
+        ...,
+        ge=0,
+        le=100,
+        example=62,
+        description="Calculated Mental Health Score (0–100)",
+    )
+
+    timestamp: datetime = Field(
+        ...,
+        example="2026-01-29T10:15:30Z"
+    )
+
     platform: Optional[str] = Field(
         None,
-        example="instagram",
+        example="manual",
         description="Source platform (manual/social)",
     )
 

@@ -218,6 +218,58 @@ def _keyword_override(text: str):
 
     return None
 
+# =====================================================
+# 📊 SEVERITY DETECTION
+# =====================================================
+def detect_severity(emotion: str, confidence: float) -> str:
+    if emotion == "Suicidal":
+        return "high"
+
+    if confidence >= 0.85:
+        return "high"
+    elif confidence >= 0.65:
+        return "medium"
+    else:
+        return "low"
+
+
+# =====================================================
+# 🚨 RISK LEVEL DETECTION
+# =====================================================
+def detect_risk(emotion: str) -> str:
+    if emotion == "Suicidal":
+        return "critical"
+    elif emotion in ["Depression"]:
+        return "high"
+    elif emotion in ["Anxiety", "Angry", "Sad"]:
+        return "moderate"
+    else:
+        return "low"
+
+
+# =====================================================
+# 🧠 MENTAL HEALTH INDEX CALCULATION
+# =====================================================
+def calculate_mhi(emotion: str, severity: str, risk: str) -> int:
+    base_scores = {
+        "Happy": 85,
+        "Neutral": 70,
+        "Anxiety": 45,
+        "Sad": 40,
+        "Angry": 50,
+        "Depression": 25,
+        "Suicidal": 5
+    }
+
+    score = base_scores.get(emotion, 60)
+
+    if severity == "high":
+        score -= 10
+
+    if risk == "critical":
+        score = min(score, 10)
+
+    return max(0, min(score, 100))
 
 # =====================================================
 # 🧠 BASE PREDICTION (INTERNAL)
@@ -256,9 +308,20 @@ def final_prediction(text: str) -> dict:
     Stable public interface for FastAPI.
     DO NOT REMOVE — app.py depends on this.
     """
+
     result = predict_emotion(text)
 
+    emotion = result["emotion"]
+    confidence = result["confidence"]
+
+    severity = detect_severity(emotion, confidence)
+    risk = detect_risk(emotion)
+    mhi = calculate_mhi(emotion, severity, risk)
+
     return {
-        "final_mental_state": result["emotion"],
-        "confidence": result["confidence"],
+        "final_mental_state": emotion,
+        "confidence": confidence,
+        "severity": severity,
+        "risk": risk,
+        "mental_health_index": mhi
     }

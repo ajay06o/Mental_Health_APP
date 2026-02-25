@@ -91,6 +91,9 @@ class User(Base):
 # =====================================================
 # 🧠 EMOTION HISTORY MODEL
 # =====================================================
+# =====================================================
+# 🧠 EMOTION HISTORY MODEL (UPDATED)
+# =====================================================
 class EmotionHistory(Base):
     __tablename__ = "emotion_history"
 
@@ -117,10 +120,25 @@ class EmotionHistory(Base):
         default=0.0,
     )
 
+    # 🔥 Changed: severity is now string
     severity = Column(
+        String(20),
+        nullable=False,
+        default="low",
+    )
+
+    # 🆕 Risk level
+    risk = Column(
+        String(20),
+        nullable=False,
+        default="low",
+    )
+
+    # 🧠 Mental Health Index (0–100)
+    mental_health_index = Column(
         Integer,
         nullable=False,
-        default=1,
+        default=70,
     )
 
     text = Column(
