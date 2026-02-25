@@ -37,3 +37,4 @@ requests>=2.31.0
 cloudinary
 fastapi-mail
 twilio
+python-multipart
