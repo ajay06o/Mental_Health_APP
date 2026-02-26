@@ -1,92 +1,16 @@
-import numpy as np
-from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
+import os
+import requests
 
-# =====================================================
-# GLOBAL VARIABLES (DO NOT LOAD MODEL HERE)
-# =====================================================
+HF_API_TOKEN = os.getenv("HF_API_TOKEN")
 
-_semantic_model = None
-_emotion_embeddings = None
+HF_MODEL_URL = "https://api-inference.huggingface.co/models/j-hartmann/emotion-english-distilroberta-base"
 
-EMOTIONS = [
-    "Happy",
-    "Sad",
-    "Anxiety",
-    "Angry",
-    "Depression",
-    "Suicidal",
-    "Neutral"
-]
-
-# Multilingual references (light but effective)
-EMOTION_REFERENCE = {
-    "Happy": [
-        "I feel happy",
-        "मैं खुश हूँ",
-        "నేను సంతోషంగా ఉన్నాను",
-    ],
-    "Sad": [
-        "I feel sad",
-        "मैं उदास हूँ",
-        "నేను బాధగా ఉన్నాను",
-    ],
-    "Anxiety": [
-        "I feel anxious",
-        "मुझे चिंता हो रही है",
-        "నాకు ఆందోళనగా ఉంది",
-    ],
-    "Angry": [
-        "I am angry",
-        "मुझे गुस्सा आ रहा है",
-        "నాకు కోపంగా ఉంది",
-    ],
-    "Depression": [
-        "I feel depressed",
-        "मैं निराश हूँ",
-        "నేను నిరాశగా ఉన్నాను",
-    ],
-    "Suicidal": [
-        "I want to die",
-        "मैं मरना चाहता हूँ",
-        "నేను చావాలని ఉంది",
-    ],
-    "Neutral": [
-        "I feel normal",
-        "मैं सामान्य हूँ",
-        "నేను సాధారణంగా ఉన్నాను",
-    ]
+HEADERS = {
+    "Authorization": f"Bearer {HF_API_TOKEN}"
 }
 
 # =====================================================
-# SAFE MODEL LOADER
-# =====================================================
-
-def _load_model():
-    global _semantic_model, _emotion_embeddings
-
-    if _semantic_model is None:
-        print("Loading lightweight multilingual model...")
-
-        # 🔥 USE LIGHT MODEL (IMPORTANT)
-        _semantic_model = SentenceTransformer(
-            "paraphrase-multilingual-MiniLM-L3-v2"
-        )
-
-        embeddings = []
-
-        for emotion in EMOTIONS:
-            emb = _semantic_model.encode(
-                EMOTION_REFERENCE[emotion]
-            )
-            embeddings.append(np.mean(emb, axis=0))
-
-        _emotion_embeddings = np.vstack(embeddings)
-
-        print("Model loaded successfully.")
-
-# =====================================================
-# 🚨 SUICIDAL PRIORITY
+# 🚨 SUICIDAL OVERRIDE (ALWAYS FIRST)
 # =====================================================
 
 def _suicidal_override(text: str):
@@ -97,7 +21,9 @@ def _suicidal_override(text: str):
         "kill myself",
         "end my life",
         "आत्महत्या",
-        "చావాలని ఉంది",
+        "मरना चाहता",
+        "చావాలని",
+        "ఆత్మహత్య",
     ]
 
     for p in phrases:
@@ -107,21 +33,53 @@ def _suicidal_override(text: str):
     return None
 
 # =====================================================
-# SEMANTIC PREDICTION
+# 🤖 HUGGINGFACE CALL
 # =====================================================
 
-def _semantic_predict(text: str):
-    text_embedding = _semantic_model.encode([text])
-    scores = cosine_similarity(
-        text_embedding,
-        _emotion_embeddings
-    )[0]
+def _call_huggingface(text: str):
 
-    best_idx = int(np.argmax(scores))
-    return EMOTIONS[best_idx], float(scores[best_idx])
+    payload = {"inputs": text}
+
+    response = requests.post(
+        HF_MODEL_URL,
+        headers=HEADERS,
+        json=payload,
+        timeout=10
+    )
+
+    if response.status_code != 200:
+        return "Neutral", 0.5
+
+    data = response.json()
+
+    # Model returns list of emotions with scores
+    if isinstance(data, list) and len(data) > 0:
+        predictions = data[0]
+        best = max(predictions, key=lambda x: x["score"])
+
+        label = best["label"].lower()
+        score = float(best["score"])
+
+        # Map model labels → your system labels
+        if label in ["joy", "love"]:
+            return "Happy", score
+
+        if label in ["sadness"]:
+            return "Sad", score
+
+        if label in ["anger"]:
+            return "Angry", score
+
+        if label in ["fear"]:
+            return "Anxiety", score
+
+        if label in ["disgust"]:
+            return "Depression", score
+
+    return "Neutral", 0.5
 
 # =====================================================
-# MAIN PREDICTION
+# 🎯 MAIN PREDICTION
 # =====================================================
 
 def predict_emotion(text: str):
@@ -129,7 +87,6 @@ def predict_emotion(text: str):
     if not text or not text.strip():
         return {"emotion": "Neutral", "confidence": 0.0}
 
-    # 🚨 Safety first
     override = _suicidal_override(text)
     if override:
         return {
@@ -137,48 +94,50 @@ def predict_emotion(text: str):
             "confidence": override[1],
         }
 
-    # 🔥 Load only when needed
-    if _semantic_model is None:
-        _load_model()
-
-    emotion, score = _semantic_predict(text)
+    emotion, confidence = _call_huggingface(text)
 
     return {
         "emotion": emotion,
-        "confidence": round(score, 4),
+        "confidence": round(confidence, 4),
     }
 
 # =====================================================
-# SEVERITY
+# 📊 SEVERITY
 # =====================================================
 
 def detect_severity(emotion: str, confidence: float):
+
     if emotion == "Suicidal":
         return "high"
+
     if confidence >= 0.85:
         return "high"
     elif confidence >= 0.65:
         return "medium"
-    return "low"
+    else:
+        return "low"
 
 # =====================================================
-# RISK
+# 🚨 RISK
 # =====================================================
 
 def detect_risk(emotion: str):
+
     if emotion == "Suicidal":
         return "critical"
     elif emotion == "Depression":
         return "high"
     elif emotion in ["Anxiety", "Angry", "Sad"]:
         return "moderate"
-    return "low"
+    else:
+        return "low"
 
 # =====================================================
-# MHI
+# 🧠 MHI
 # =====================================================
 
 def calculate_mhi(emotion: str, severity: str, risk: str):
+
     base_scores = {
         "Happy": 85,
         "Neutral": 70,
@@ -200,7 +159,7 @@ def calculate_mhi(emotion: str, severity: str, risk: str):
     return max(0, min(score, 100))
 
 # =====================================================
-# PUBLIC API
+# ✅ PUBLIC API
 # =====================================================
 
 def final_prediction(text: str):
