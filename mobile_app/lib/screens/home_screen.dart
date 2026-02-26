@@ -451,39 +451,216 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _graph() {
-    if (_points.length < 2) {
-      return const Center(
-        child: Text(
-          "No trend data yet",
-          style: TextStyle(
-              color: Colors.white70),
-        ),
-      );
-    }
-
-    final spots = List.generate(
-      _points.length,
-      (i) => FlSpot(
-        i.toDouble(),
-        _severity(
-            _points[i].emotion),
-      ),
-    );
-
-    return LineChart(
-      LineChartData(
-        minY: 0.8,
-        maxY: 6.2,
-        lineBarsData: [
-          LineChartBarData(
-            spots: spots,
-            isCurved: true,
-            barWidth: 4,
-            color:
-                const Color(0xFF6D5DF6),
-          ),
-        ],
+  if (_points.length < 2) {
+    return const Center(
+      child: Text(
+        "No trend data yet",
+        style: TextStyle(color: Colors.white70),
       ),
     );
   }
+
+  final lastIndex = _points.length - 1;
+  final interval = (_points.length / 4).ceilToDouble();
+
+  return TweenAnimationBuilder<double>(
+    tween: Tween(begin: 0, end: 1),
+    duration: const Duration(milliseconds: 800),
+    curve: Curves.easeOutCubic,
+    builder: (context, animationValue, child) {
+      final animatedSpots = List.generate(
+        _points.length,
+        (i) => FlSpot(
+          i.toDouble(),
+          _severity(_points[i].emotion) * animationValue,
+        ),
+      );
+
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(28),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFFFFFFFF),
+              Color(0xFFF4F6FF),
+            ],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 25,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        child: LineChart(
+          LineChartData(
+            minY: 0.8,
+            maxY: 6.2,
+            borderData: FlBorderData(show: false),
+            clipData: FlClipData.all(),
+
+            // 🔥 Soft Grid
+            gridData: FlGridData(
+              show: true,
+              drawVerticalLine: false,
+              horizontalInterval: 1,
+              getDrawingHorizontalLine: (value) {
+                return FlLine(
+                  color: Colors.grey.withOpacity(0.15),
+                  strokeWidth: 1,
+                );
+              },
+            ),
+
+            // 🔥 Clean Axis
+            titlesData: FlTitlesData(
+              topTitles: AxisTitles(
+                  sideTitles: SideTitles(showTitles: false)),
+              rightTitles: AxisTitles(
+                  sideTitles: SideTitles(showTitles: false)),
+              leftTitles: AxisTitles(
+  sideTitles: SideTitles(
+    showTitles: true,
+    interval: 1,
+    reservedSize: 40,
+    getTitlesWidget: (value, meta) {
+      const style = TextStyle(
+        fontSize: 18,
+      );
+
+      switch (value.toInt()) {
+        case 1:
+          return const Text("😊", style: style);
+        case 2:
+          return const Text("😔", style: style);
+        case 3:
+          return const Text("😰", style: style);
+        case 4:
+          return const Text("😡", style: style);
+        case 5:
+          return const Text("💔", style: style);
+        case 6:
+          return const Text("🚨", style: style);
+        default:
+          return const SizedBox();
+      }
+    },
+  ),
+),
+              bottomTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  interval: interval,
+                  getTitlesWidget: (value, meta) {
+                    final index = value.toInt();
+                    if (index < 0 || index >= _points.length) {
+                      return const SizedBox();
+                    }
+
+                    final date = DateFormat("MMM d")
+                        .format(_points[index].time);
+
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Text(
+                        date,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.black54,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+
+            // 🔥 Tooltip
+            lineTouchData: LineTouchData(
+              handleBuiltInTouches: true,
+              touchTooltipData: LineTouchTooltipData(
+                tooltipBgColor: const Color(0xFF1F1F1F),
+                tooltipRoundedRadius: 12,
+                getTooltipItems: (touchedSpots) {
+                  return touchedSpots.map((spot) {
+                    final index = spot.x.toInt();
+                    final emotion =
+                        _points[index].emotion.toUpperCase();
+                    final time = DateFormat("MMM d, HH:mm")
+                        .format(_points[index].time);
+
+                    return LineTooltipItem(
+                      "$emotion\n$time",
+                      const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    );
+                  }).toList();
+                },
+              ),
+            ),
+
+            // 🔥 Premium Gradient Line
+            lineBarsData: [
+              LineChartBarData(
+                spots: animatedSpots,
+                isCurved: true,
+                curveSmoothness: 0.4,
+                barWidth: 5,
+                isStrokeCapRound: true,
+                gradient: const LinearGradient(
+                  colors: [
+                    Color(0xFF7A6FF0),
+                    Color(0xFF5C9EFF),
+                  ],
+                ),
+
+                dotData: FlDotData(
+                  show: true,
+                  getDotPainter:
+                      (spot, percent, bar, index) {
+                    if (index == lastIndex) {
+                      return FlDotCirclePainter(
+                        radius: 7,
+                        color: const Color(0xFF7A6FF0),
+                        strokeWidth: 3,
+                        strokeColor: Colors.white,
+                      );
+                    }
+                    return FlDotCirclePainter(
+                      radius: 4,
+                      color: const Color(0xFF5C9EFF),
+                    );
+                  },
+                ),
+
+                // 🔥 Soft Glow Area
+                belowBarData: BarAreaData(
+                  show: true,
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      const Color(0xFF7A6FF0)
+                          .withOpacity(0.25),
+                      const Color(0xFF5C9EFF)
+                          .withOpacity(0.05),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
 }

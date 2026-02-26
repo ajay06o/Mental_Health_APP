@@ -38,3 +38,7 @@ cloudinary
 fastapi-mail
 twilio
 python-multipart
+sentence-transformers
+scikit-learn
+torch
+nltk
