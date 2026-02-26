@@ -1,10 +1,9 @@
-import re
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
 # =====================================================
-# GLOBAL VARIABLES
+# GLOBAL VARIABLES (DO NOT LOAD MODEL HERE)
 # =====================================================
 
 _semantic_model = None
@@ -20,130 +19,117 @@ EMOTIONS = [
     "Neutral"
 ]
 
-# Multilingual reference sentences
+# Multilingual references (light but effective)
 EMOTION_REFERENCE = {
     "Happy": [
-        # English
-        "I feel joyful and satisfied",
-        # Hindi
-        "मैं खुश और संतुष्ट महसूस कर रहा हूँ",
-        # Telugu
-        "నేను సంతోషంగా మరియు ప్రశాంతంగా ఉన్నాను",
+        "I feel happy",
+        "मैं खुश हूँ",
+        "నేను సంతోషంగా ఉన్నాను",
     ],
     "Sad": [
-        "I feel lonely and hurt",
-        "मैं उदास और अकेला महसूस कर रहा हूँ",
-        "నేను బాధగా మరియు ఒంటరిగా ఉన్నాను",
+        "I feel sad",
+        "मैं उदास हूँ",
+        "నేను బాధగా ఉన్నాను",
     ],
     "Anxiety": [
-        "I feel nervous and restless",
-        "मुझे घबराहट और चिंता हो रही है",
-        "నాకు ఆందోళన మరియు గాబరా గా ఉంది",
+        "I feel anxious",
+        "मुझे चिंता हो रही है",
+        "నాకు ఆందోళనగా ఉంది",
     ],
     "Angry": [
-        "I am furious and irritated",
-        "मुझे बहुत गुस्सा आ रहा है",
-        "నాకు చాలా కోపంగా ఉంది",
+        "I am angry",
+        "मुझे गुस्सा आ रहा है",
+        "నాకు కోపంగా ఉంది",
     ],
     "Depression": [
-        "I feel hopeless and empty",
-        "मैं निराश और खाली महसूस कर रहा हूँ",
-        "నేను నిరాశగా మరియు ఖాళీగా ఉన్నాను",
+        "I feel depressed",
+        "मैं निराश हूँ",
+        "నేను నిరాశగా ఉన్నాను",
     ],
     "Suicidal": [
-        "I want to end my life",
-        "मैं अपनी जान देना चाहता हूँ",
-        "నేను నా జీవితం ముగించాలనుకుంటున్నాను",
+        "I want to die",
+        "मैं मरना चाहता हूँ",
+        "నేను చావాలని ఉంది",
     ],
     "Neutral": [
         "I feel normal",
-        "मैं सामान्य महसूस कर रहा हूँ",
+        "मैं सामान्य हूँ",
         "నేను సాధారణంగా ఉన్నాను",
     ]
 }
 
-
 # =====================================================
-# LOAD MODEL (MULTILINGUAL)
+# SAFE MODEL LOADER
 # =====================================================
 
-def _load():
+def _load_model():
     global _semantic_model, _emotion_embeddings
 
     if _semantic_model is None:
+        print("Loading lightweight multilingual model...")
+
+        # 🔥 USE LIGHT MODEL (IMPORTANT)
         _semantic_model = SentenceTransformer(
-            "paraphrase-multilingual-MiniLM-L12-v2"
+            "paraphrase-multilingual-MiniLM-L3-v2"
         )
 
         embeddings = []
 
         for emotion in EMOTIONS:
-            refs = EMOTION_REFERENCE[emotion]
-            emb = _semantic_model.encode(refs)
-            avg_emb = np.mean(emb, axis=0)
-            embeddings.append(avg_emb)
+            emb = _semantic_model.encode(
+                EMOTION_REFERENCE[emotion]
+            )
+            embeddings.append(np.mean(emb, axis=0))
 
         _emotion_embeddings = np.vstack(embeddings)
 
+        print("Model loaded successfully.")
 
 # =====================================================
-# TEXT CLEANING
-# =====================================================
-
-def _normalize_text(text: str) -> str:
-    text = text.strip()
-    return text
-
-
-# =====================================================
-# 🚨 SUICIDAL OVERRIDE (HIGH PRIORITY)
+# 🚨 SUICIDAL PRIORITY
 # =====================================================
 
 def _suicidal_override(text: str):
     t = text.lower()
 
-    suicidal_phrases = [
-        # English
-        "want to die", "kill myself", "end my life",
-        # Hindi
-        "आत्महत्या", "मरना चाहता हूँ",
-        # Telugu
-        "చావాలని ఉంది", "ఆత్మహత్య",
+    phrases = [
+        "want to die",
+        "kill myself",
+        "end my life",
+        "आत्महत्या",
+        "చావాలని ఉంది",
     ]
 
-    for phrase in suicidal_phrases:
-        if phrase in t:
+    for p in phrases:
+        if p in t:
             return "Suicidal", 0.99
 
     return None
 
-
 # =====================================================
-# 🧠 SEMANTIC PREDICTION
+# SEMANTIC PREDICTION
 # =====================================================
 
 def _semantic_predict(text: str):
-    global _semantic_model, _emotion_embeddings
-
     text_embedding = _semantic_model.encode([text])
-    scores = cosine_similarity(text_embedding, _emotion_embeddings)[0]
+    scores = cosine_similarity(
+        text_embedding,
+        _emotion_embeddings
+    )[0]
 
     best_idx = int(np.argmax(scores))
-    best_emotion = EMOTIONS[best_idx]
-    best_score = float(scores[best_idx])
-
-    return best_emotion, best_score
-
+    return EMOTIONS[best_idx], float(scores[best_idx])
 
 # =====================================================
-# 🎯 MAIN PREDICTION
+# MAIN PREDICTION
 # =====================================================
 
-def predict_emotion(text: str) -> dict:
+def predict_emotion(text: str):
+
     if not text or not text.strip():
         return {"emotion": "Neutral", "confidence": 0.0}
 
-    # 1️⃣ Suicidal override
+    # 🚨 Safety first
     override = _suicidal_override(text)
     if override:
         return {
@@ -151,8 +137,10 @@ def predict_emotion(text: str) -> dict:
             "confidence": override[1],
         }
 
-    # 2️⃣ Semantic multilingual prediction
-    _load()
+    # 🔥 Load only when needed
+    if _semantic_model is None:
+        _load_model()
+
     emotion, score = _semantic_predict(text)
 
     return {
@@ -160,43 +148,37 @@ def predict_emotion(text: str) -> dict:
         "confidence": round(score, 4),
     }
 
-
 # =====================================================
-# 📊 SEVERITY
+# SEVERITY
 # =====================================================
 
-def detect_severity(emotion: str, confidence: float) -> str:
+def detect_severity(emotion: str, confidence: float):
     if emotion == "Suicidal":
         return "high"
-
     if confidence >= 0.85:
         return "high"
     elif confidence >= 0.65:
         return "medium"
-    else:
-        return "low"
-
+    return "low"
 
 # =====================================================
-# 🚨 RISK
+# RISK
 # =====================================================
 
-def detect_risk(emotion: str) -> str:
+def detect_risk(emotion: str):
     if emotion == "Suicidal":
         return "critical"
     elif emotion == "Depression":
         return "high"
     elif emotion in ["Anxiety", "Angry", "Sad"]:
         return "moderate"
-    else:
-        return "low"
-
+    return "low"
 
 # =====================================================
-# 🧠 MENTAL HEALTH INDEX
+# MHI
 # =====================================================
 
-def calculate_mhi(emotion: str, severity: str, risk: str) -> int:
+def calculate_mhi(emotion: str, severity: str, risk: str):
     base_scores = {
         "Happy": 85,
         "Neutral": 70,
@@ -217,12 +199,11 @@ def calculate_mhi(emotion: str, severity: str, risk: str) -> int:
 
     return max(0, min(score, 100))
 
-
 # =====================================================
-# ✅ PUBLIC API (UNCHANGED)
+# PUBLIC API
 # =====================================================
 
-def final_prediction(text: str) -> dict:
+def final_prediction(text: str):
 
     result = predict_emotion(text)
 
