@@ -26,19 +26,27 @@ email-validator==2.1.0.post1
 python-multipart==0.0.6
 
 # =========================
-# AI / ML (PYTHON 3.13 SAFE)
+# AI / ML (Stable & Safe)
 # =========================
 numpy>=2.1.0
 scikit-learn>=1.5.2
 joblib>=1.4.2
-cryptography>=42.0.0
-apscheduler>=3.10.4
+torch>=2.2.0
+transformers>=4.41.0
+sentencepiece>=0.2.0
+protobuf>=4.25.3
+nltk>=3.8.1
+
+# =========================
+# Utilities
+# =========================
 requests>=2.31.0
+apscheduler>=3.10.4
+cryptography>=42.0.0
+
+# =========================
+# External Integrations
+# =========================
 cloudinary
 fastapi-mail
 twilio
-python-multipart
-sentence-transformers
-scikit-learn
-torch
-nltk

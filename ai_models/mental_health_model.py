@@ -1,119 +1,79 @@
-import os
-import requests
-
-HF_API_TOKEN = os.getenv("HF_API_TOKEN")
-
-HF_MODEL_URL = "https://router.huggingface.co/hf-inference/models/j-hartmann/emotion-english-distilroberta-base"
-
-HEADERS = {
-    "Authorization": f"Bearer {HF_API_TOKEN}"
-}
+import torch
+import torch.nn.functional as F
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 # =====================================================
-# 🚨 SUICIDAL OVERRIDE (ALWAYS FIRST)
+# ✅ LOAD STABLE MULTILINGUAL MODEL
+# =====================================================
+
+MODEL_NAME = "cardiffnlp/twitter-xlm-roberta-base-sentiment"
+
+print("Loading multilingual sentiment model...")
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
+model.eval()
+print("Model loaded successfully.\n")
+
+
+# =====================================================
+# 🚨 SUICIDAL OVERRIDE (HIGH PRIORITY)
 # =====================================================
 
 def _suicidal_override(text: str):
     t = text.lower()
 
-    phrases = [
-        "want to die",
-        "kill myself",
-        "end my life",
-        "i don't want to live",
-        "life is meaningless",
-        "आत्महत्या",
-        "मरना चाहता",
-        "చావాలని",
-        "ఆత్మహత్య",
+    suicidal_phrases = [
+        # English
+        "want to die", "kill myself", "end my life",
+        "i don't want to live", "better off dead",
+
+        # Hindi
+        "आत्महत्या", "मरना चाहता", "जीना नहीं चाहता",
+
+        # Telugu
+        "చావాలని ఉంది", "ఆత్మహత్య", "బతకాలని లేదు",
     ]
 
-    for p in phrases:
-        if p in t:
+    for phrase in suicidal_phrases:
+        if phrase in t:
             return "Suicidal", 0.99
 
     return None
 
 
 # =====================================================
-# 🧠 SIMPLE WORD SUPPORT (single word inputs)
+# 🤖 LOCAL MODEL INFERENCE
 # =====================================================
 
-def _simple_word_override(text: str):
-    word = text.lower().strip()
+def _call_model(text: str):
 
-    simple_map = {
-        "happy": "Happy",
-        "joy": "Happy",
-        "sad": "Sad",
-        "depressed": "Depression",
-        "depression": "Depression",
-        "anxiety": "Anxiety",
-        "anxious": "Anxiety",
-        "anger": "Angry",
-        "angry": "Angry",
-        "neutral": "Neutral"
+    inputs = tokenizer(
+        text,
+        return_tensors="pt",
+        truncation=True,
+        padding=True,
+        max_length=128
+    )
+
+    with torch.no_grad():
+        outputs = model(**inputs)
+
+    probs = F.softmax(outputs.logits, dim=1)
+    confidence, predicted_class = torch.max(probs, dim=1)
+
+    label_id = predicted_class.item()
+    score = confidence.item()
+
+    # Cardiff mapping
+    label_map = {
+        0: "Sad",       # Negative
+        1: "Neutral",   # Neutral
+        2: "Happy"      # Positive
     }
 
-    if word in simple_map:
-        return simple_map[word], 0.95
+    emotion = label_map.get(label_id, "Neutral")
 
-    return None
-
-
-# =====================================================
-# 🤖 HUGGINGFACE CALL
-# =====================================================
-
-def _call_huggingface(text: str):
-
-    payload = {"inputs": text}
-
-    try:
-        response = requests.post(
-            HF_MODEL_URL,
-            headers=HEADERS,
-            json=payload,
-            timeout=20
-        )
-    except Exception as e:
-        print("HF Exception:", e)
-        return "Neutral", 0.0
-
-    if response.status_code != 200:
-        print("HF ERROR:", response.status_code, response.text)
-        return "Neutral", 0.0
-
-    data = response.json()
-
-    # If model still loading or error
-    if isinstance(data, dict) and "error" in data:
-        print("HF Model Loading/Error:", data)
-        return "Neutral", 0.0
-
-    # Model returns list of emotions with scores
-    if isinstance(data, list) and len(data) > 0:
-        predictions = data[0]
-        best = max(predictions, key=lambda x: x["score"])
-
-        label = best["label"].lower()
-        score = float(best["score"])
-
-        # Map model labels → your system labels
-        if label in ["joy", "love"]:
-            return "Happy", score
-        elif label == "sadness":
-            return "Sad", score
-        elif label == "anger":
-            return "Angry", score
-        elif label == "fear":
-            return "Anxiety", score
-        elif label == "disgust":
-            return "Depression", score
-        elif label == "neutral":
-            return "Neutral", score
-
-    return "Neutral", 0.5
+    return emotion, score
 
 
 # =====================================================
@@ -122,40 +82,26 @@ def _call_huggingface(text: str):
 
 def predict_emotion(text: str):
 
-    if not text or not text.strip():
+    if not text.strip():
         return {"emotion": "Neutral", "confidence": 0.0}
 
-    # 1️⃣ Suicidal override
     override = _suicidal_override(text)
     if override:
-        return {
-            "emotion": override[0],
-            "confidence": override[1],
-        }
+        return {"emotion": override[0], "confidence": override[1]}
 
-    # 2️⃣ Single word override
-    simple_override = _simple_word_override(text)
-    if simple_override:
-        return {
-            "emotion": simple_override[0],
-            "confidence": simple_override[1],
-        }
+    emotion, confidence = _call_model(text)
 
-    # 3️⃣ HuggingFace AI prediction
-    emotion, confidence = _call_huggingface(text)
-
-    # 4️⃣ Confidence threshold protection
     if confidence < 0.40:
         emotion = "Neutral"
 
     return {
         "emotion": emotion,
-        "confidence": round(confidence, 4),
+        "confidence": round(confidence, 4)
     }
 
 
 # =====================================================
-# 📊 SEVERITY
+# 📊 SEVERITY DETECTION
 # =====================================================
 
 def detect_severity(emotion: str, confidence: float):
@@ -172,23 +118,26 @@ def detect_severity(emotion: str, confidence: float):
 
 
 # =====================================================
-# 🚨 RISK
+# 🚨 RISK DETECTION
 # =====================================================
 
 def detect_risk(emotion: str):
 
     if emotion == "Suicidal":
         return "critical"
+
     elif emotion == "Depression":
         return "high"
-    elif emotion in ["Anxiety", "Angry", "Sad"]:
+
+    elif emotion in ["Sad", "Anxiety", "Angry"]:
         return "moderate"
+
     else:
         return "low"
 
 
 # =====================================================
-# 🧠 MHI
+# 🧠 MENTAL HEALTH INDEX
 # =====================================================
 
 def calculate_mhi(emotion: str, severity: str, risk: str):
@@ -215,7 +164,7 @@ def calculate_mhi(emotion: str, severity: str, risk: str):
 
 
 # =====================================================
-# ✅ PUBLIC API
+# ✅ FINAL PUBLIC API
 # =====================================================
 
 def final_prediction(text: str):
@@ -236,9 +185,22 @@ def final_prediction(text: str):
         "risk": risk,
         "mental_health_index": mhi
     }
+
+
+# =====================================================
+# 🧪 TESTING
+# =====================================================
+
 if __name__ == "__main__":
-    print(final_prediction("I want to die."))
-    print(final_prediction("This situation is frustrating and unfair."))
-    print(final_prediction("I feel irritated and annoyed."))
-    print(final_prediction("Why does this always happen to me?"))
-    print(final_prediction("I am upset and furious right now."))
+
+    print("\n--- English ---")
+    print(final_prediction("I am very happy today"))
+    print(final_prediction("I feel tired of living like this"))
+
+    print("\n--- Hindi ---")
+    print(final_prediction("मैं बहुत खुश हूँ"))
+    print(final_prediction("मुझे जीने का मन नहीं करता"))
+
+    print("\n--- Telugu ---")
+    print(final_prediction("నేను చాలా సంతోషంగా ఉన్నాను"))
+    print(final_prediction("నాకు బతకాలని లేదు"))

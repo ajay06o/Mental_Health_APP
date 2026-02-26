@@ -24,39 +24,74 @@ class _HomeScreenState extends State<HomeScreen>
     with TickerProviderStateMixin {
   final TextEditingController _controller = TextEditingController();
   final List<TrendPoint> _points = [];
-  static List<TrendPoint>? _cachedPoints;
+  List<FlSpot> _spots = [];
+  
 
   bool _loading = false;
+  bool _historyLoading = true;
   String? _currentEmotion;
 
-  // 🆕 NEW DYNAMIC FIELDS (DOES NOT AFFECT OLD CODE)
-  String? _risk;
-  int? _mhi;
 
   late AnimationController _bgController;
+  late AnimationController _emojiController;
+late Animation<double> _emojiAnimation;
+late AnimationController _graphController;
+late Animation<double> _graphFade;
+late Animation<Offset> _graphSlide;
 
-  @override
-  void initState() {
-    super.initState();
+ 
 
-    if (_cachedPoints != null) {
-      _points.addAll(_cachedPoints!);
-    }
+@override
+void initState() {
+  super.initState();
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadHistory();
-    });
+  _loadHistory(); // 🔥 ALWAYS load fresh data
 
-    _bgController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 16),
-    )..repeat(reverse: true);
-  }
+  _bgController = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 16),
+  )..repeat(reverse: true);
 
+  _emojiController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 500),
+  );
+
+  _emojiAnimation = Tween<double>(
+  begin: 0.7,
+  end: 1.0,
+).animate(
+  CurvedAnimation(
+    parent: _emojiController,
+    curve: Curves.elasticOut,
+  ),
+);
+_graphController = AnimationController(
+  vsync: this,
+  duration: const Duration(milliseconds: 600),
+);
+
+_graphFade = CurvedAnimation(
+  parent: _graphController,
+  curve: Curves.easeOut,
+);
+
+_graphSlide = Tween<Offset>(
+  begin: const Offset(0, 0.06),
+  end: Offset.zero,
+).animate(
+  CurvedAnimation(
+    parent: _graphController,
+    curve: Curves.easeOutCubic,
+  ),
+);
+}
   @override
   void dispose() {
     _controller.dispose();
     _bgController.dispose();
+    _graphController.dispose();
+    _emojiController.dispose();
     super.dispose();
   }
 
@@ -78,38 +113,62 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  Future<void> _loadHistory() async {
-    try {
-      final data = await PredictService.fetchHistory();
+ Future<void> _loadHistory() async {
+  try {
+    final data = await PredictService.fetchHistory();
 
-      final loadedPoints = <TrendPoint>[];
+    final loadedPoints = <TrendPoint>[];
 
-      for (final e in data) {
-        final raw = e["created_at"];
-        if (raw != null) {
-          final parsed = DateTime.parse(raw);
-          loadedPoints.add(
-            TrendPoint(
-              e["emotion"] ?? "unknown",
-              parsed.isUtc ? parsed.toLocal() : parsed,
-            ),
-          );
-        }
+    for (final e in data) {
+      final raw = e["created_at"];
+      if (raw != null) {
+        final parsed = DateTime.parse(raw);
+        loadedPoints.add(
+          TrendPoint(
+            e["emotion"] ?? "unknown",
+            parsed.isUtc ? parsed.toLocal() : parsed,
+          ),
+        );
       }
+    }
 
-      loadedPoints.sort((a, b) => a.time.compareTo(b.time));
+    loadedPoints.sort((a, b) => a.time.compareTo(b.time));
 
-      if (!mounted) return;
+    // 🔥 limit history for performance
+    if (loadedPoints.length > 30) {
+      loadedPoints.removeRange(
+        0,
+        loadedPoints.length - 30,
+      );
+    }
 
-      setState(() {
-        _points
-          ..clear()
-          ..addAll(loadedPoints);
+    if (!mounted) return;
 
-        _cachedPoints = List.from(loadedPoints);
-      });
-    } catch (_) {}
+    setState(() {
+      _points
+        ..clear()
+        ..addAll(loadedPoints);
+
+      
+
+      // ✅ Precompute spots ONCE
+      _spots = List.generate(
+        loadedPoints.length,
+        (i) => FlSpot(
+          i.toDouble(),
+          _severity(loadedPoints[i].emotion),
+        ),
+      );
+
+      _historyLoading = false;
+    });
+    _graphController.forward();
+  } catch (_) {
+    if (mounted) {
+      setState(() => _historyLoading = false);
+    }
   }
+}
 
   Future<void> _analyze() async {
     final text = _controller.text.trim();
@@ -126,26 +185,29 @@ class _HomeScreenState extends State<HomeScreen>
           _parseTimestamp(result["timestamp"]);
 
       if (parsedTime != null) {
-        _points.add(
-          TrendPoint(
-            emotion,
-            parsedTime,
-          ),
-        );
-      }
+  _points.add(TrendPoint(emotion, parsedTime));
+}
 
-      if (!mounted) return;
+if (!mounted) return;
 
-      setState(() {
-        _currentEmotion = emotion;
+setState(() {
+  _currentEmotion = emotion;
+  _controller.clear();
+  _loading = false;
 
-        // 🆕 NEW DATA (DOES NOT BREAK OLD LOGIC)
-        _risk = result["risk"];
-        _mhi = result["mental_health_index"];
 
-        _controller.clear();
-        _loading = false;
-      });
+
+  // 🔥 recompute spots
+  _spots = List.generate(
+    _points.length,
+    (i) => FlSpot(
+      i.toDouble(),
+      _severity(_points[i].emotion),
+    ),
+  );
+});
+
+_emojiController.forward(from: 0); // 🔥 bounce trigger
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -190,145 +252,138 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  Widget _mhiCard() {
-    if (_mhi == null) return const SizedBox();
 
-    Color color;
-    String status;
 
-    if (_mhi! >= 70) {
-      color = Colors.green;
-      status = "Healthy";
-    } else if (_mhi! >= 40) {
-      color = Colors.orange;
-      status = "Needs Attention";
-    } else {
-      color = Colors.red;
-      status = "Critical";
-    }
+  Widget _emotionCard() {
+  if (_currentEmotion == null) return const SizedBox();
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 14),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: BackdropFilter(
-          filter:
-              ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 18, vertical: 16),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.97),
-              borderRadius:
-                  BorderRadius.circular(18),
-            ),
-            child: Row(
-              mainAxisAlignment:
-                  MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
+  final emotion = _currentEmotion!.toLowerCase();
+
+  Color accent;
+  switch (emotion) {
+    case "happy":
+      accent = Colors.green;
+      break;
+    case "sad":
+      accent = Colors.blue;
+      break;
+    case "anxiety":
+      accent = Colors.orange;
+      break;
+    case "angry":
+      accent = Colors.red;
+      break;
+    case "depression":
+      accent = Colors.purple;
+      break;
+    case "suicidal":
+      accent = Colors.red.shade900;
+      break;
+    default:
+      accent = Colors.grey;
+  }
+
+  return AnimatedSwitcher(
+    duration: const Duration(milliseconds: 500),
+    switchInCurve: Curves.easeOutBack,
+    switchOutCurve: Curves.easeIn,
+    transitionBuilder: (child, animation) {
+      final slideAnimation = Tween<Offset>(
+        begin: const Offset(0, 0.15),
+        end: Offset.zero,
+      ).animate(animation);
+
+      final scaleAnimation = Tween<double>(
+        begin: 0.95,
+        end: 1,
+      ).animate(animation);
+
+      return FadeTransition(
+        opacity: animation,
+        child: SlideTransition(
+          position: slideAnimation,
+          child: ScaleTransition(
+            scale: scaleAnimation,
+            child: child,
+          ),
+        ),
+      );
+    },
+    child: ClipRRect(
+      key: ValueKey(_currentEmotion),
+      borderRadius: BorderRadius.circular(18),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+              horizontal: 18, vertical: 20),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.97),
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: accent.withOpacity(0.25),
+                blurRadius: 25,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              ScaleTransition(
+  scale: _emojiAnimation,
+  child: Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      shape: BoxShape.circle,
+      boxShadow: [
+        BoxShadow(
+          color: accent.withOpacity(0.2),
+          blurRadius: 12,
+        ),
+      ],
+    ),
+    child: Text(
+      _emoji(_currentEmotion!),
+      style: const TextStyle(
+        fontSize: 30,
+      ),
+    ),
+  ),
+),
+              const SizedBox(width: 18),
+              Expanded(
+                child: Column(
                   crossAxisAlignment:
                       CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      "Mental Health Index",
+                    Text(
+                      _currentEmotion!.toUpperCase(),
                       style: TextStyle(
-                        fontSize: 14,
-                        fontWeight:
-                            FontWeight.w600,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: accent,
                       ),
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      "$_mhi / 100",
+                      "Your current emotional state",
                       style: TextStyle(
-                        fontSize: 20,
-                        fontWeight:
-                            FontWeight.bold,
-                        color: color,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      status,
-                      style: TextStyle(
-                        color: color,
-                        fontWeight:
-                            FontWeight.w600,
+                        fontSize: 13,
+                        color: Colors.grey.shade600,
                       ),
                     ),
                   ],
-                ),
-                if (_risk != null)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6),
-                    decoration: BoxDecoration(
-                      color:
-                          color.withOpacity(0.15),
-                      borderRadius:
-                          BorderRadius.circular(
-                              12),
-                    ),
-                    child: Text(
-                      _risk!.toUpperCase(),
-                      style: TextStyle(
-                        color: color,
-                        fontWeight:
-                            FontWeight.w700,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _emotionCard() {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
-      child: BackdropFilter(
-        filter:
-            ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-        child: Container(
-          padding:
-              const EdgeInsets.symmetric(
-                  horizontal: 18,
-                  vertical: 16),
-          decoration: BoxDecoration(
-            color:
-                Colors.white.withOpacity(0.97),
-            borderRadius:
-                BorderRadius.circular(18),
-          ),
-          child: Row(
-            children: [
-              Text(
-                _emoji(_currentEmotion!),
-                style:
-                    const TextStyle(fontSize: 30),
-              ),
-              const SizedBox(width: 14),
-              Text(
-                _currentEmotion!.toUpperCase(),
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight:
-                      FontWeight.w700,
-                  color: Colors.black87,
                 ),
               ),
             ],
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   @override
   Widget build(BuildContext context) {
@@ -379,7 +434,6 @@ class _HomeScreenState extends State<HomeScreen>
                     const SizedBox(height: 20),
                     if (_currentEmotion != null)
                       _emotionCard(),
-                    _mhiCard(),
                     const SizedBox(height: 20),
                     Expanded(child: _graph()),
                   ],
@@ -393,37 +447,36 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _glassInput() {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter:
-            ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-        child: Container(
-          padding:
-              const EdgeInsets.symmetric(
-                  horizontal: 16),
-          decoration: BoxDecoration(
-            color:
-                Colors.white.withOpacity(0.9),
-            borderRadius:
-                BorderRadius.circular(20),
+  return ClipRRect(
+    borderRadius: BorderRadius.circular(20),
+    child: BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.9),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: TextField(
+          controller: _controller,
+          enabled: !_loading,
+          style: const TextStyle(
+            color: Colors.black,
+            fontSize: 16,
+            fontWeight: FontWeight.w500,
           ),
-          child: TextField(
-            controller: _controller,
-            maxLines: 3,
-            decoration:
-                const InputDecoration(
-              hintText:
-                  "Share how you feel...",
-              border:
-                  InputBorder.none,
+          decoration: InputDecoration(
+            hintText: "How are you feeling today?",
+            hintStyle: TextStyle(
+              color: Colors.grey.shade600,
             ),
+            border: InputBorder.none,
           ),
         ),
       ),
-    );
-  }
-
+    ),
+  );
+}
   Widget _analyzeButton() {
     return SizedBox(
       width: double.infinity,
@@ -450,8 +503,14 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _graph() {
-  if (_points.length < 2) {
+Widget _graph() {
+  if (_historyLoading) {
+    return const Center(
+      child: CircularProgressIndicator(color: Colors.white),
+    );
+  }
+
+  if (_spots.length < 2) {
     return const Center(
       child: Text(
         "No trend data yet",
@@ -460,114 +519,73 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  final lastIndex = _points.length - 1;
-  final interval = (_points.length / 4).ceilToDouble();
-
-  return TweenAnimationBuilder<double>(
-    tween: Tween(begin: 0, end: 1),
-    duration: const Duration(milliseconds: 800),
-    curve: Curves.easeOutCubic,
-    builder: (context, animationValue, child) {
-      final animatedSpots = List.generate(
-        _points.length,
-        (i) => FlSpot(
-          i.toDouble(),
-          _severity(_points[i].emotion) * animationValue,
-        ),
-      );
-
-      return Container(
+  final lastIndex = _spots.length - 1;
+  final interval = (_spots.length / 4).ceilToDouble();
+return FadeTransition(
+  opacity: _graphFade,
+  child: SlideTransition(
+    position: _graphSlide,
+    child: RepaintBoundary(   // ✅ colon added
+      child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(28),
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFFFFFFFF),
-              Color(0xFFF4F6FF),
-            ],
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.08),
-              blurRadius: 25,
-              offset: const Offset(0, 12),
-            ),
-          ],
+          color: Colors.white,
         ),
         child: LineChart(
           LineChartData(
             minY: 0.8,
             maxY: 6.2,
+            gridData: FlGridData(show: false),
             borderData: FlBorderData(show: false),
-            clipData: FlClipData.all(),
 
-            // 🔥 Soft Grid
-            gridData: FlGridData(
-              show: true,
-              drawVerticalLine: false,
-              horizontalInterval: 1,
-              getDrawingHorizontalLine: (value) {
-                return FlLine(
-                  color: Colors.grey.withOpacity(0.15),
-                  strokeWidth: 1,
-                );
-              },
-            ),
-
-            // 🔥 Clean Axis
             titlesData: FlTitlesData(
               topTitles: AxisTitles(
                   sideTitles: SideTitles(showTitles: false)),
               rightTitles: AxisTitles(
                   sideTitles: SideTitles(showTitles: false)),
               leftTitles: AxisTitles(
-  sideTitles: SideTitles(
-    showTitles: true,
-    interval: 1,
-    reservedSize: 40,
-    getTitlesWidget: (value, meta) {
-      const style = TextStyle(
-        fontSize: 18,
-      );
-
-      switch (value.toInt()) {
-        case 1:
-          return const Text("😊", style: style);
-        case 2:
-          return const Text("😔", style: style);
-        case 3:
-          return const Text("😰", style: style);
-        case 4:
-          return const Text("😡", style: style);
-        case 5:
-          return const Text("💔", style: style);
-        case 6:
-          return const Text("🚨", style: style);
-        default:
-          return const SizedBox();
-      }
-    },
-  ),
-),
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  interval: 1,
+                  reservedSize: 40,
+                  getTitlesWidget: (value, meta) {
+                    const style = TextStyle(fontSize: 18);
+                    switch (value.toInt()) {
+                      case 1:
+                        return const Text("😊", style: style);
+                      case 2:
+                        return const Text("😔", style: style);
+                      case 3:
+                        return const Text("😰", style: style);
+                      case 4:
+                        return const Text("😡", style: style);
+                      case 5:
+                        return const Text("💔", style: style);
+                      case 6:
+                        return const Text("🚨", style: style);
+                      default:
+                        return const SizedBox();
+                    }
+                  },
+                ),
+              ),
               bottomTitles: AxisTitles(
                 sideTitles: SideTitles(
                   showTitles: true,
-                  interval: interval,
+                  reservedSize: 30,
+                  interval: (_points.length / 5).ceilToDouble(),
                   getTitlesWidget: (value, meta) {
                     final index = value.toInt();
                     if (index < 0 || index >= _points.length) {
                       return const SizedBox();
                     }
 
-                    final date = DateFormat("MMM d")
-                        .format(_points[index].time);
-
                     return Padding(
-                      padding: const EdgeInsets.only(top: 10),
+                      padding: const EdgeInsets.only(top: 6),
                       child: Text(
-                        date,
+                        DateFormat("MMM d")
+                            .format(_points[index].time),
                         style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w500,
@@ -580,25 +598,30 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ),
 
-            // 🔥 Tooltip
             lineTouchData: LineTouchData(
               handleBuiltInTouches: true,
               touchTooltipData: LineTouchTooltipData(
-                tooltipBgColor: const Color(0xFF1F1F1F),
+                tooltipBgColor: const Color(0xFF2F3E46),
                 tooltipRoundedRadius: 12,
+                tooltipPadding: const EdgeInsets.all(12),
                 getTooltipItems: (touchedSpots) {
                   return touchedSpots.map((spot) {
                     final index = spot.x.toInt();
-                    final emotion =
-                        _points[index].emotion.toUpperCase();
-                    final time = DateFormat("MMM d, HH:mm")
-                        .format(_points[index].time);
+                    final point = _points[index];
+
+                    final emoji = _emoji(point.emotion);
+                    final date = DateFormat("MMM d, yyyy")
+                        .format(point.time);
+                    final time =
+                        DateFormat("HH:mm").format(point.time);
 
                     return LineTooltipItem(
-                      "$emotion\n$time",
+                      "$emoji  ${point.emotion.toUpperCase()}\n$date\n$time",
                       const TextStyle(
                         color: Colors.white,
+                        fontSize: 12,
                         fontWeight: FontWeight.w600,
+                        height: 1.4,
                       ),
                     );
                   }).toList();
@@ -606,61 +629,42 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ),
 
-            // 🔥 Premium Gradient Line
             lineBarsData: [
               LineChartBarData(
-                spots: animatedSpots,
+                spots: _spots,
                 isCurved: true,
-                curveSmoothness: 0.4,
-                barWidth: 5,
-                isStrokeCapRound: true,
+                barWidth: 4,
                 gradient: const LinearGradient(
                   colors: [
                     Color(0xFF7A6FF0),
                     Color(0xFF5C9EFF),
                   ],
                 ),
-
                 dotData: FlDotData(
                   show: true,
                   getDotPainter:
                       (spot, percent, bar, index) {
                     if (index == lastIndex) {
                       return FlDotCirclePainter(
-                        radius: 7,
+                        radius: 6,
                         color: const Color(0xFF7A6FF0),
                         strokeWidth: 3,
                         strokeColor: Colors.white,
                       );
                     }
                     return FlDotCirclePainter(
-                      radius: 4,
+                      radius: 3,
                       color: const Color(0xFF5C9EFF),
                     );
                   },
-                ),
-
-                // 🔥 Soft Glow Area
-                belowBarData: BarAreaData(
-                  show: true,
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      const Color(0xFF7A6FF0)
-                          .withOpacity(0.25),
-                      const Color(0xFF5C9EFF)
-                          .withOpacity(0.05),
-                      Colors.transparent,
-                    ],
-                  ),
                 ),
               ),
             ],
           ),
         ),
-      );
-    },
-  );
+      ),
+    ),
+  ),
+);
 }
-}
+    }

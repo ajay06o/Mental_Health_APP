@@ -17,17 +17,21 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen>
     with TickerProviderStateMixin {
-    
 
   late Future<Map<String, dynamic>> _profileFuture;
 
-  // Existing animation
   late AnimationController _animationController;
+
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
   late Animation<double> _scaleAnimation;
 
-  // NEW animations for smooth update
+  late Animation<double> _statsFade;
+  late Animation<Offset> _statsSlide;
+
+  late Animation<double> _settingsFade;
+  late Animation<Offset> _settingsSlide;
+
   late AnimationController _avatarController;
   late Animation<double> _avatarScale;
 
@@ -44,28 +48,43 @@ class _ProfileScreenState extends State<ProfileScreen>
       duration: const Duration(milliseconds: 900),
     );
 
-    _fadeAnimation =
-        CurvedAnimation(parent: _animationController, curve: Curves.easeOut);
+    // HEADER
+    _fadeAnimation = CurvedAnimation(
+      parent: _animationController,
+      curve: const Interval(0.0, 0.4, curve: Curves.easeOut),
+    );
 
     _slideAnimation = Tween<Offset>(
       begin: const Offset(0, 0.3),
       end: Offset.zero,
-    ).animate(
-      CurvedAnimation(
-        parent: _animationController,
-        curve: Curves.easeOutCubic,
-      ),
-    );
+    ).animate(_fadeAnimation);
 
     _scaleAnimation = Tween<double>(
       begin: 0.85,
       end: 1,
-    ).animate(
-      CurvedAnimation(
-        parent: _animationController,
-        curve: Curves.easeOutBack,
-      ),
+    ).animate(_fadeAnimation);
+
+    // STATS
+    _statsFade = CurvedAnimation(
+      parent: _animationController,
+      curve: const Interval(0.3, 0.7, curve: Curves.easeOut),
     );
+
+    _statsSlide = Tween<Offset>(
+      begin: const Offset(0, 0.1),
+      end: Offset.zero,
+    ).animate(_statsFade);
+
+    // SETTINGS
+    _settingsFade = CurvedAnimation(
+      parent: _animationController,
+      curve: const Interval(0.6, 1.0, curve: Curves.easeOut),
+    );
+
+    _settingsSlide = Tween<Offset>(
+      begin: const Offset(0, 0.15),
+      end: Offset.zero,
+    ).animate(_settingsFade);
 
     // Avatar pop animation
     _avatarController = AnimationController(
@@ -93,7 +112,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     super.dispose();
   }
 
-  // Smooth refresh
   Future<void> _refreshProfile() async {
     setState(() => _isRefreshing = true);
 
@@ -109,8 +127,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       setState(() => _isRefreshing = false);
     }
   }
-
-  // ================= IMAGE PICKER =================
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
@@ -133,7 +149,6 @@ class _ProfileScreenState extends State<ProfileScreen>
 
       await _refreshProfile();
 
-      // Avatar pop
       _avatarController.forward().then((_) {
         _avatarController.reverse();
       });
@@ -212,65 +227,95 @@ class _ProfileScreenState extends State<ProfileScreen>
                 duration: const Duration(milliseconds: 400),
                 opacity: _isRefreshing ? 0.5 : 1,
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.center,
-                    children: [
+  padding: const EdgeInsets.all(20),
+  child: Column(
+    crossAxisAlignment: CrossAxisAlignment.center,
+    children: [
 
-                      _animatedProfileHeader(displayName, data),
+      // HEADER
+      FadeTransition(
+        opacity: _fadeAnimation,
+        child: SlideTransition(
+          position: _slideAnimation,
+          child: ScaleTransition(
+            scale: _scaleAnimation,
+            child: _animatedProfileHeader(displayName, data),
+          ),
+        ),
+      ),
 
-                      const SizedBox(height: 40),
+      const SizedBox(height: 40),
 
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _statCard(
-                              "Entries",
-                              totalEntries.toString(),
-                              Icons.edit_note,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: _statCard(
-                              "Avg Score",
-                              avgSeverity.toStringAsFixed(1),
-                              Icons.analytics,
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      if (highRisk) _warningCard(),
-
-                      const SizedBox(height: 40),
-
-                      _sectionTitle("Account"),
-                      const SizedBox(height: 16),
-
-                      _settingsTile(
-                        icon: Icons.settings,
-                        title: "Settings",
-                        onTap: () => context.go("/settings"),
-                      ),
-
-                      _settingsTile(
-                        icon: Icons.edit,
-                        title: "Edit Profile",
-                        onTap: () async {
-                          final data = await _profileFuture;
-                          if (!mounted) return;
-                          _openEditProfileSheet(data);
-                        },
-                      ),
-
-                      const SizedBox(height: 40),
-
-                      _logoutButton(),
-                    ],
+      // STATS
+      FadeTransition(
+        opacity: _statsFade,
+        child: SlideTransition(
+          position: _statsSlide,
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: _statCard(
+                      "Entries",
+                      totalEntries.toString(),
+                      Icons.edit_note,
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _statCard(
+                      "Avg Score",
+                      avgSeverity.toStringAsFixed(1),
+                      Icons.analytics,
+                    ),
+                  ),
+                ],
+              ),
+              if (highRisk) _warningCard(),
+            ],
+          ),
+        ),
+      ),
+
+      const SizedBox(height: 40),
+
+      // SETTINGS
+      FadeTransition(
+        opacity: _settingsFade,
+        child: SlideTransition(
+          position: _settingsSlide,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              _sectionTitle("Account"),
+              const SizedBox(height: 16),
+
+              _settingsTile(
+                icon: Icons.settings,
+                title: "Settings",
+                onTap: () => context.go("/settings"),
+              ),
+
+              _settingsTile(
+                icon: Icons.edit,
+                title: "Edit Profile",
+                onTap: () async {
+                  final data = await _profileFuture;
+                  if (!mounted) return;
+                  _openEditProfileSheet(data);
+                },
+              ),
+
+              const SizedBox(height: 40),
+              _logoutButton(),
+            ],
+          ),
+        ),
+      ),
+    ],
+  ),
+)
               );
             },
           ),
@@ -791,4 +836,4 @@ class _ProfileScreenState extends State<ProfileScreen>
     },
   );
 }
-}
+} 
