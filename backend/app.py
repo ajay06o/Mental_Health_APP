@@ -255,6 +255,41 @@ def profile(user: User = Depends(get_current_user), db: Session = Depends(get_db
     "alerts_enabled": user.alerts_enabled,
 }
 
+# =====================================================
+# UPDATE PROFILE
+# =====================================================
+@app.put("/profile")
+def update_profile(
+    data: ProfileUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+
+    if data.name is not None:
+        user.name = data.name.strip()
+
+    if data.email is not None:
+        user.email = data.email.strip().lower()
+
+    if data.password:
+        user.password = hash_password(data.password)
+
+    if data.emergency_name is not None:
+        user.emergency_name = data.emergency_name.strip()
+
+    if data.emergency_email is not None:
+        user.emergency_email = data.emergency_email.strip()
+
+    if data.alerts_enabled is not None:
+        user.alerts_enabled = data.alerts_enabled
+
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "message": "Profile updated successfully"
+    }
+
 
     # =====================================================
 # 🖼 CLOUDINARY PROFILE IMAGE UPLOAD
