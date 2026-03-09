@@ -25,67 +25,71 @@ class _HomeScreenState extends State<HomeScreen>
   final TextEditingController _controller = TextEditingController();
   final List<TrendPoint> _points = [];
   List<FlSpot> _spots = [];
-  
 
   bool _loading = false;
   bool _historyLoading = true;
   String? _currentEmotion;
 
+  // 🆕 AI INSIGHT VARIABLES
+  String? _trend;
+  Map<String, dynamic>? _futurePrediction;
+  Map<String, dynamic>? _adaptiveAnalysis;
+  int? _mentalHealthIndex;
 
   late AnimationController _bgController;
   late AnimationController _emojiController;
-late Animation<double> _emojiAnimation;
-late AnimationController _graphController;
-late Animation<double> _graphFade;
-late Animation<Offset> _graphSlide;
+  late Animation<double> _emojiAnimation;
+  late AnimationController _graphController;
+  late Animation<double> _graphFade;
+  late Animation<Offset> _graphSlide;
 
- 
+  @override
+  void initState() {
+    super.initState();
 
-@override
-void initState() {
-  super.initState();
+    _loadHistory();
 
-  _loadHistory(); // 🔥 ALWAYS load fresh data
+    _bgController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 16),
+    )..repeat(reverse: true);
 
-  _bgController = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 16),
-  )..repeat(reverse: true);
+    _emojiController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
 
-  _emojiController = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 500),
-  );
+    _emojiAnimation = Tween<double>(
+      begin: 0.7,
+      end: 1.0,
+    ).animate(
+      CurvedAnimation(
+        parent: _emojiController,
+        curve: Curves.elasticOut,
+      ),
+    );
 
-  _emojiAnimation = Tween<double>(
-  begin: 0.7,
-  end: 1.0,
-).animate(
-  CurvedAnimation(
-    parent: _emojiController,
-    curve: Curves.elasticOut,
-  ),
-);
-_graphController = AnimationController(
-  vsync: this,
-  duration: const Duration(milliseconds: 600),
-);
+    _graphController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
 
-_graphFade = CurvedAnimation(
-  parent: _graphController,
-  curve: Curves.easeOut,
-);
+    _graphFade = CurvedAnimation(
+      parent: _graphController,
+      curve: Curves.easeOut,
+    );
 
-_graphSlide = Tween<Offset>(
-  begin: const Offset(0, 0.06),
-  end: Offset.zero,
-).animate(
-  CurvedAnimation(
-    parent: _graphController,
-    curve: Curves.easeOutCubic,
-  ),
-);
-}
+    _graphSlide = Tween<Offset>(
+      begin: const Offset(0, 0.06),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _graphController,
+        curve: Curves.easeOutCubic,
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _controller.dispose();
@@ -113,62 +117,59 @@ _graphSlide = Tween<Offset>(
     }
   }
 
- Future<void> _loadHistory() async {
-  try {
-    final data = await PredictService.fetchHistory();
+  Future<void> _loadHistory() async {
+    try {
+      final data = await PredictService.fetchHistory();
 
-    final loadedPoints = <TrendPoint>[];
+      final loadedPoints = <TrendPoint>[];
 
-    for (final e in data) {
-      final raw = e["created_at"];
-      if (raw != null) {
-        final parsed = DateTime.parse(raw);
-        loadedPoints.add(
-          TrendPoint(
-            e["emotion"] ?? "unknown",
-            parsed.isUtc ? parsed.toLocal() : parsed,
-          ),
+      for (final e in data) {
+        final raw = e["created_at"];
+        if (raw != null) {
+          final parsed = DateTime.parse(raw);
+          loadedPoints.add(
+            TrendPoint(
+              e["emotion"] ?? "unknown",
+              parsed.isUtc ? parsed.toLocal() : parsed,
+            ),
+          );
+        }
+      }
+
+      loadedPoints.sort((a, b) => a.time.compareTo(b.time));
+
+      if (loadedPoints.length > 30) {
+        loadedPoints.removeRange(
+          0,
+          loadedPoints.length - 30,
         );
       }
-    }
 
-    loadedPoints.sort((a, b) => a.time.compareTo(b.time));
+      if (!mounted) return;
 
-    // 🔥 limit history for performance
-    if (loadedPoints.length > 30) {
-      loadedPoints.removeRange(
-        0,
-        loadedPoints.length - 30,
-      );
-    }
+      setState(() {
+        _points
+          ..clear()
+          ..addAll(loadedPoints);
 
-    if (!mounted) return;
+        _spots = List.generate(
+          loadedPoints.length,
+          (i) => FlSpot(
+            i.toDouble(),
+            _severity(loadedPoints[i].emotion),
+          ),
+        );
 
-    setState(() {
-      _points
-        ..clear()
-        ..addAll(loadedPoints);
+        _historyLoading = false;
+      });
 
-      
-
-      // ✅ Precompute spots ONCE
-      _spots = List.generate(
-        loadedPoints.length,
-        (i) => FlSpot(
-          i.toDouble(),
-          _severity(loadedPoints[i].emotion),
-        ),
-      );
-
-      _historyLoading = false;
-    });
-    _graphController.forward();
-  } catch (_) {
-    if (mounted) {
-      setState(() => _historyLoading = false);
+      _graphController.forward();
+    } catch (_) {
+      if (mounted) {
+        setState(() => _historyLoading = false);
+      }
     }
   }
-}
 
   Future<void> _analyze() async {
     final text = _controller.text.trim();
@@ -185,29 +186,32 @@ _graphSlide = Tween<Offset>(
           _parseTimestamp(result["timestamp"]);
 
       if (parsedTime != null) {
-  _points.add(TrendPoint(emotion, parsedTime));
-}
+        _points.add(TrendPoint(emotion, parsedTime));
+      }
 
-if (!mounted) return;
+      if (!mounted) return;
 
-setState(() {
-  _currentEmotion = emotion;
-  _controller.clear();
-  _loading = false;
+      setState(() {
+        _currentEmotion = emotion;
+        _controller.clear();
+        _loading = false;
 
+        // 🆕 SAVE AI INSIGHTS
+        _trend = result["trend"];
+        _futurePrediction = result["future_prediction"];
+        _adaptiveAnalysis = result["adaptive_analysis"];
+        _mentalHealthIndex = result["mental_health_index"];
 
+        _spots = List.generate(
+          _points.length,
+          (i) => FlSpot(
+            i.toDouble(),
+            _severity(_points[i].emotion),
+          ),
+        );
+      });
 
-  // 🔥 recompute spots
-  _spots = List.generate(
-    _points.length,
-    (i) => FlSpot(
-      i.toDouble(),
-      _severity(_points[i].emotion),
-    ),
-  );
-});
-
-_emojiController.forward(from: 0); // 🔥 bounce trigger
+      _emojiController.forward(from: 0);
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -252,8 +256,50 @@ _emojiController.forward(from: 0); // 🔥 bounce trigger
     }
   }
 
+  // 🆕 AI INSIGHTS CARD
+  Widget _aiInsightsCard() {
+    if (_trend == null &&
+        _futurePrediction == null &&
+        _adaptiveAnalysis == null) {
+      return const SizedBox();
+    }
 
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        color: Colors.white.withOpacity(0.95),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "AI Insights 🧠",
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 10),
 
+          if (_trend != null)
+            Text("Trend: $_trend"),
+
+          if (_mentalHealthIndex != null)
+            Text("Mental Health Index: $_mentalHealthIndex"),
+
+          if (_futurePrediction != null)
+            Text(
+                _futurePrediction?["message"] ?? ""),
+
+          if (_adaptiveAnalysis != null)
+            Text(
+                "Baseline mood: ${_adaptiveAnalysis?["baseline_score"] ?? "-"}"),
+        ],
+      ),
+    );
+  }
   Widget _emotionCard() {
   if (_currentEmotion == null) return const SizedBox();
 
@@ -283,104 +329,66 @@ _emojiController.forward(from: 0); // 🔥 bounce trigger
       accent = Colors.grey;
   }
 
-  return AnimatedSwitcher(
-    duration: const Duration(milliseconds: 500),
-    switchInCurve: Curves.easeOutBack,
-    switchOutCurve: Curves.easeIn,
-    transitionBuilder: (child, animation) {
-      final slideAnimation = Tween<Offset>(
-        begin: const Offset(0, 0.15),
-        end: Offset.zero,
-      ).animate(animation);
-
-      final scaleAnimation = Tween<double>(
-        begin: 0.95,
-        end: 1,
-      ).animate(animation);
-
-      return FadeTransition(
-        opacity: animation,
-        child: SlideTransition(
-          position: slideAnimation,
-          child: ScaleTransition(
-            scale: scaleAnimation,
-            child: child,
-          ),
-        ),
-      );
-    },
-    child: ClipRRect(
-      key: ValueKey(_currentEmotion),
-      borderRadius: BorderRadius.circular(18),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-              horizontal: 18, vertical: 20),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.97),
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: [
-              BoxShadow(
-                color: accent.withOpacity(0.25),
-                blurRadius: 25,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              ScaleTransition(
-  scale: _emojiAnimation,
-  child: Container(
-    padding: const EdgeInsets.all(12),
+  return Container(
+    padding: const EdgeInsets.symmetric(
+      horizontal: 18,
+      vertical: 20,
+    ),
     decoration: BoxDecoration(
-      color: Colors.white,
-      shape: BoxShape.circle,
+      color: Colors.white.withOpacity(0.95),
+      borderRadius: BorderRadius.circular(18),
       boxShadow: [
         BoxShadow(
-          color: accent.withOpacity(0.2),
-          blurRadius: 12,
+          color: accent.withOpacity(0.25),
+          blurRadius: 25,
+          offset: const Offset(0, 10),
         ),
       ],
     ),
-    child: Text(
-      _emoji(_currentEmotion!),
-      style: const TextStyle(
-        fontSize: 30,
-      ),
-    ),
-  ),
-),
-              const SizedBox(width: 18),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _currentEmotion!.toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: accent,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      "Your current emotional state",
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                  ],
+    child: Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: accent.withOpacity(0.2),
+                blurRadius: 12,
+              ),
+            ],
+          ),
+          child: Text(
+            _emoji(_currentEmotion!),
+            style: const TextStyle(fontSize: 30),
+          ),
+        ),
+        const SizedBox(width: 18),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _currentEmotion!.toUpperCase(),
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: accent,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                "Your current emotional state",
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey.shade600,
                 ),
               ),
             ],
           ),
         ),
-      ),
+      ],
     ),
   );
 }
@@ -402,8 +410,8 @@ _emojiController.forward(from: 0); // 🔥 bounce trigger
             ),
             child: SafeArea(
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 20),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20),
                 child: Column(
                   crossAxisAlignment:
                       CrossAxisAlignment.start,
@@ -411,17 +419,14 @@ _emojiController.forward(from: 0); // 🔥 bounce trigger
                     const SizedBox(height: 20),
                     const Row(
                       mainAxisAlignment:
-                          MainAxisAlignment
-                              .spaceBetween,
+                          MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
                           "Dashboard 🌿",
                           style: TextStyle(
                             fontSize: 22,
-                            fontWeight:
-                                FontWeight.w700,
-                            color:
-                                Colors.white,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
                           ),
                         ),
                         AppLogo(size: 32),
@@ -432,9 +437,15 @@ _emojiController.forward(from: 0); // 🔥 bounce trigger
                     const SizedBox(height: 14),
                     _analyzeButton(),
                     const SizedBox(height: 20),
+
                     if (_currentEmotion != null)
                       _emotionCard(),
+
+                    // 🆕 AI INSIGHTS PANEL
+                    _aiInsightsCard(),
+
                     const SizedBox(height: 20),
+
                     Expanded(child: _graph()),
                   ],
                 ),
@@ -445,6 +456,8 @@ _emojiController.forward(from: 0); // 🔥 bounce trigger
       ),
     );
   }
+
+  // ---------- existing widgets below unchanged ----------
 
   Widget _glassInput() {
   return ClipRRect(

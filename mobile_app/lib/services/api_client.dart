@@ -77,7 +77,7 @@ class ApiClient {
   }
 
   // =================================================
-  // 🛡 SAFE REQUEST (AUTO TOKEN REFRESH)
+  // 🛡 SAFE REQUEST
   // =================================================
   static Future<http.Response> _safeRequest(
     Future<http.Response> Function() request, {
@@ -202,7 +202,7 @@ class ApiClient {
   }
 
   // =================================================
-  // 🌐 PUBLIC (NO AUTH) METHODS
+  // 🌐 PUBLIC METHODS
   // =================================================
   static Future<dynamic> getPublic(String endpoint) async {
     final response = await _client.get(
@@ -298,7 +298,7 @@ class ApiClient {
   }
 
   // =================================================
-  // 🖼 MULTIPART UPLOAD (WEB + MOBILE SAFE)
+  // 🖼 MULTIPART UPLOAD
   // =================================================
   static Future<dynamic> multipart(
     String endpoint, {
@@ -342,6 +342,38 @@ class ApiClient {
         await http.Response.fromStream(streamedResponse);
 
     return _parseResponse(response);
+  }
+
+  // =================================================
+  // 🧠 AI ENDPOINT HELPERS (NEW)
+  // =================================================
+
+  /// Predict emotion using AI backend
+  static Future<Map<String, dynamic>> predictEmotion(
+      String text) async {
+    final result = await post(
+      "/predict",
+      {"text": text},
+    );
+
+    return Map<String, dynamic>.from(result);
+  }
+
+  /// Get user emotion history
+  static Future<List<dynamic>> getHistory() async {
+    final result = await get("/history");
+    return List<dynamic>.from(result);
+  }
+
+  /// Get user profile
+  static Future<Map<String, dynamic>> getProfile() async {
+    final result = await get("/profile");
+    return Map<String, dynamic>.from(result);
+  }
+
+  /// Delete history record
+  static Future<void> deleteHistory(int id) async {
+    await delete("/history/$id");
   }
 
   // =================================================

@@ -48,6 +48,21 @@ class PredictService {
         final bool emergencyTriggered =
             decoded["emergency_triggered"] ?? false;
 
+        // 🆕 NEW AI FIELDS (SAFE OPTIONAL)
+        final String? trend = decoded["trend"];
+
+        final Map<String, dynamic>? futurePrediction =
+            decoded["future_prediction"] is Map
+                ? Map<String, dynamic>.from(
+                    decoded["future_prediction"])
+                : null;
+
+        final Map<String, dynamic>? adaptiveAnalysis =
+            decoded["adaptive_analysis"] is Map
+                ? Map<String, dynamic>.from(
+                    decoded["adaptive_analysis"])
+                : null;
+
         // -------------------------------------------------
         // 🔁 BACKWARD COMPATIBILITY
         // Convert severity string → old int scale (1–5)
@@ -87,6 +102,11 @@ class PredictService {
           "risk": risk,
           "mental_health_index": mhi,
           "emergency_triggered": emergencyTriggered,
+
+          // 🧠 AI Intelligence Layers
+          "trend": trend,
+          "future_prediction": futurePrediction,
+          "adaptive_analysis": adaptiveAnalysis,
         };
       }
 
@@ -108,6 +128,12 @@ class PredictService {
       "risk": "low",
       "mental_health_index": 70,
       "emergency_triggered": false,
+
+      // new fields fallback
+      "trend": null,
+      "future_prediction": null,
+      "adaptive_analysis": null,
+
       "timestamp": DateTime.now().toIso8601String(),
     };
   }

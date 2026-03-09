@@ -234,6 +234,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                   severity: item["severity"],
                                   createdAt: item["created_at"]
                                       ?.toString(),
+
+                                  // 🆕 NEW OPTIONAL FIELDS
+                                  risk: item["risk"],
+                                  mentalHealthIndex:
+                                      item["mental_health_index"],
                                 ),
                               );
                             },
@@ -253,11 +258,17 @@ class _HistoryCard extends StatelessWidget {
   final dynamic severity;
   final String? createdAt;
 
+  // 🆕 NEW FIELDS
+  final String? risk;
+  final int? mentalHealthIndex;
+
   const _HistoryCard({
     required this.emotion,
     required this.confidence,
     required this.severity,
     required this.createdAt,
+    this.risk,
+    this.mentalHealthIndex,
   });
 
   String _emoji(String emotion) {
@@ -322,11 +333,36 @@ class _HistoryCard extends StatelessWidget {
               ),
             ],
           ),
+
           const SizedBox(height: 8),
+
           Text(
             "Confidence: ${(confidence * 100).toStringAsFixed(1)}%",
             style: const TextStyle(color: Colors.white70),
           ),
+
+          // 🆕 RISK LEVEL
+          if (risk != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                "Risk: $risk",
+                style: const TextStyle(
+                    color: Colors.orangeAccent),
+              ),
+            ),
+
+          // 🆕 MENTAL HEALTH INDEX
+          if (mentalHealthIndex != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                "MHI: $mentalHealthIndex",
+                style: const TextStyle(
+                    color: Colors.lightGreenAccent),
+              ),
+            ),
+
           if (formattedDate.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text(

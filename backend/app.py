@@ -317,18 +317,41 @@ async def predict_emotion_api(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+
     if not data.text or not data.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
-    result = final_prediction(data.text)
+    # =====================================================
+    # Load recent emotion history
+    # =====================================================
+    history_records = (
+        db.query(EmotionHistory)
+        .filter(EmotionHistory.user_id == user.id)
+        .order_by(EmotionHistory.timestamp.desc())
+        .limit(10)
+        .all()
+    )
+
+    emotion_history = [r.emotion for r in reversed(history_records)]
+
+    # =====================================================
+    # Run AI prediction
+    # =====================================================
+    result = final_prediction(data.text, emotion_history)
 
     emotion = result["final_mental_state"]
     confidence = result["confidence"]
-    severity = result["severity"]          # string
-    risk = result["risk"]                  # string
+    severity = result["severity"]
+    risk = result["risk"]
     mental_health_index = result["mental_health_index"]
 
+    trend = result.get("trend")
+    future_prediction = result.get("future_prediction")
+    adaptive_analysis = result.get("adaptive_analysis")
+
+    # =====================================================
     # Save to DB
+    # =====================================================
     history_entry = EmotionHistory(
         user_id=user.id,
         emotion=emotion,
@@ -343,15 +366,18 @@ async def predict_emotion_api(
     db.add(history_entry)
     db.commit()
 
+    # =====================================================
+    # Emergency Alert Logic
+    # =====================================================
     emergency_triggered = False
 
-    # 🚨 Emergency trigger logic
     if (
         emotion == "Suicidal"
         and user.alerts_enabled
         and user.emergency_email
         and not user.alert_sent
     ):
+
         suicidal_count = (
             db.query(EmotionHistory)
             .filter(
@@ -364,6 +390,7 @@ async def predict_emotion_api(
         if suicidal_count >= 3:
 
             if mail_conf:
+
                 try:
                     message = MessageSchema(
                         subject="🚨 Emergency Mental Health Alert",
@@ -382,6 +409,7 @@ This is an automated safety alert.
 
                     fm = FastMail(mail_conf)
                     await fm.send_message(message)
+
                     emergency_triggered = True
 
                 except Exception as e:
@@ -390,12 +418,22 @@ This is an automated safety alert.
             user.alert_sent = True
             db.commit()
 
+    # =====================================================
+    # API Response
+    # =====================================================
     return {
+
         "emotion": emotion,
         "confidence": confidence,
         "severity": severity,
         "risk": risk,
         "mental_health_index": mental_health_index,
+
+        # 🧠 AI intelligence layers
+        "trend": trend,
+        "future_prediction": future_prediction,
+        "adaptive_analysis": adaptive_analysis,
+
         "emergency_triggered": emergency_triggered,
     }
 

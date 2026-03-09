@@ -217,11 +217,17 @@ class _ProfileScreenState extends State<ProfileScreen>
                       : email;
 
               final totalEntries =
-                  data["total_entries"] ?? 0;
-              final avgSeverity =
-                  (data["avg_severity"] ?? 0).toDouble();
-              final highRisk =
-                  data["high_risk"] == true;
+    data["total_entries"] ?? 0;
+
+// 🔥 NEW: support new backend field
+final avgSeverity =
+    (data["avg_mhi"] ??
+     data["avg_severity"] ??
+     0)
+        .toDouble();
+
+final highRisk =
+    data["high_risk"] == true;
 
               return AnimatedOpacity(
                 duration: const Duration(milliseconds: 400),
@@ -265,7 +271,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   const SizedBox(width: 16),
                   Expanded(
                     child: _statCard(
-                      "Avg Score",
+                      "MHI",
                       avgSeverity.toStringAsFixed(1),
                       Icons.analytics,
                     ),
