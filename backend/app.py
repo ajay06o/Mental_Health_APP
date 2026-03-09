@@ -202,6 +202,29 @@ def login(
         token_type="bearer",
     )
 
+    # =====================================================
+# REFRESH TOKEN
+# =====================================================
+@app.post("/refresh", response_model=TokenResponse)
+def refresh_token(
+    data: RefreshTokenRequest,
+):
+    payload = verify_refresh_token(data.refresh_token)
+
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    email = payload.get("sub")
+
+    if not email:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+
+    return TokenResponse(
+        access_token=create_access_token({"sub": email}),
+        refresh_token=create_refresh_token({"sub": email}),
+        token_type="bearer",
+    )
+
 # =====================================================
 # PROFILE
 # =====================================================

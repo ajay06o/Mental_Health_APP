@@ -256,50 +256,7 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  // 🆕 AI INSIGHTS CARD
-  Widget _aiInsightsCard() {
-    if (_trend == null &&
-        _futurePrediction == null &&
-        _adaptiveAnalysis == null) {
-      return const SizedBox();
-    }
 
-    return Container(
-      margin: const EdgeInsets.only(top: 16),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        color: Colors.white.withOpacity(0.95),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            "AI Insights 🧠",
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 10),
-
-          if (_trend != null)
-            Text("Trend: $_trend"),
-
-          if (_mentalHealthIndex != null)
-            Text("Mental Health Index: $_mentalHealthIndex"),
-
-          if (_futurePrediction != null)
-            Text(
-                _futurePrediction?["message"] ?? ""),
-
-          if (_adaptiveAnalysis != null)
-            Text(
-                "Baseline mood: ${_adaptiveAnalysis?["baseline_score"] ?? "-"}"),
-        ],
-      ),
-    );
-  }
   Widget _emotionCard() {
   if (_currentEmotion == null) return const SizedBox();
 
@@ -441,9 +398,6 @@ class _HomeScreenState extends State<HomeScreen>
                     if (_currentEmotion != null)
                       _emotionCard(),
 
-                    // 🆕 AI INSIGHTS PANEL
-                    _aiInsightsCard(),
-
                     const SizedBox(height: 20),
 
                     Expanded(child: _graph()),
@@ -557,32 +511,36 @@ return FadeTransition(
                   sideTitles: SideTitles(showTitles: false)),
               rightTitles: AxisTitles(
                   sideTitles: SideTitles(showTitles: false)),
-              leftTitles: AxisTitles(
-                sideTitles: SideTitles(
-                  showTitles: true,
-                  interval: 1,
-                  reservedSize: 40,
-                  getTitlesWidget: (value, meta) {
-                    const style = TextStyle(fontSize: 18);
-                    switch (value.toInt()) {
-                      case 1:
-                        return const Text("😊", style: style);
-                      case 2:
-                        return const Text("😔", style: style);
-                      case 3:
-                        return const Text("😰", style: style);
-                      case 4:
-                        return const Text("😡", style: style);
-                      case 5:
-                        return const Text("💔", style: style);
-                      case 6:
-                        return const Text("🚨", style: style);
-                      default:
-                        return const SizedBox();
-                    }
-                  },
-                ),
-              ),
+       leftTitles: AxisTitles(
+  sideTitles: SideTitles(
+    showTitles: true,
+    interval: 1,
+    reservedSize: 40,
+    getTitlesWidget: (value, meta) {
+      const style = TextStyle(
+        fontSize: 22,
+        color: Colors.black,
+      );
+
+      switch (value.toInt()) {
+        case 1:
+          return const Text("😊", style: style);
+        case 2:
+          return const Text("😔", style: style);
+        case 3:
+          return const Text("😰", style: style);
+        case 4:
+          return const Text("😡", style: style);
+        case 5:
+          return const Text("💔", style: style);
+        case 6:
+          return const Text("🚨", style: style);
+        default:
+          return const SizedBox();
+      }
+    },
+  ),
+),
               bottomTitles: AxisTitles(
                 sideTitles: SideTitles(
                   showTitles: true,
