@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart'; // ✅ IMPORTANT
+import 'package:flutter/foundation.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'router/app_router.dart';
@@ -11,7 +11,6 @@ import 'services/api_client.dart';
 /// ==========================================
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
-    // Social background sync disabled (social connections removed)
     return Future.value(true);
   });
 }
@@ -19,12 +18,15 @@ void callbackDispatcher() {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // ✅ Run UI immediately (prevents blank screen)
+  runApp(const MentalHealthApp());
+
   try {
     // 🔐 Initialize authentication
     await AuthService.init();
 
-    // 🌐 Warm backend
-    await ApiClient.warmUpServer();
+    // 🌐 Warm backend (non-blocking)
+    ApiClient.warmUpServer();
 
     // 🔄 Initialize WorkManager (ONLY mobile)
     if (!kIsWeb) {
@@ -33,6 +35,7 @@ Future<void> main() async {
         isInDebugMode: false,
       );
     }
+
   } catch (e) {
     debugPrint("Startup error: $e");
   }
@@ -41,10 +44,6 @@ Future<void> main() async {
   ApiClient.onSessionExpired = () {
     appRouter.go("/login");
   };
-
-  // OAuth listener removed (social connections disabled)
-
-  runApp(const MentalHealthApp());
 }
 
 class MentalHealthApp extends StatelessWidget {
