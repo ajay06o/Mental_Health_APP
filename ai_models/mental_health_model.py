@@ -2,9 +2,10 @@ import os
 import requests
 import time
 
+
 HF_API_TOKEN = os.getenv("HF_API_TOKEN")
 
-HF_MODEL_URL = "https://router.huggingface.co/hf-inference/models/j-hartmann/emotion-english-distilroberta-base"
+HF_MODEL_URL = "https://router.huggingface.co/hf-inference/models/cardiffnlp/twitter-xlm-roberta-base-sentiment"
 
 HEADERS = {
     "Authorization": f"Bearer {HF_API_TOKEN}"
@@ -22,6 +23,113 @@ def normalize_text(text: str):
 
 
 # =====================================================
+# INTENSITY DETECTION
+# =====================================================
+
+def detect_intensity(text):
+
+    t = text.lower()
+
+    strong_words = [
+        "very",
+        "extremely",
+        "so much",
+        "really",
+        "too much"
+    ]
+
+    for w in strong_words:
+        if w in t:
+            return 1.2
+
+    return 1.0
+
+
+# =====================================================
+# NEW: TEXT LENGTH BOOST
+# =====================================================
+
+def length_boost(text):
+
+    if len(text) > 120:
+        return 1.1
+
+    return 1.0
+
+
+# =====================================================
+# NEW: NEGATION DETECTION
+# =====================================================
+
+def detect_negation(text):
+
+    t = text.lower()
+
+    negations = [
+        "not",
+        "never",
+        "no longer",
+        "don't",
+        "do not",
+        "isn't",
+        "wasn't"
+    ]
+
+    for n in negations:
+        if n in t:
+            return True
+
+    return False
+
+
+# =====================================================
+# NEW: EMERGENCY SIGNAL
+# =====================================================
+
+def emergency_signal(text):
+
+    t = text.lower()
+
+    phrases = [
+        "i can't go on",
+        "i can't handle this anymore",
+        "i want to disappear",
+        "i feel like ending everything"
+    ]
+
+    for p in phrases:
+        if p in t:
+            return True
+
+    return False
+
+
+# =====================================================
+# NEW: COGNITIVE DISTORTION DETECTION
+# =====================================================
+
+def detect_cognitive_distortion(text):
+
+    t = text.lower()
+
+    distortions = [
+        "nothing ever works",
+        "everything is ruined",
+        "i always fail",
+        "everyone hates me",
+        "i am useless",
+        "i am a failure",
+        "life is pointless"
+    ]
+
+    for d in distortions:
+        if d in t:
+            return True
+
+    return False
+
+
+# =====================================================
 # 🚨 SUICIDAL OVERRIDE
 # =====================================================
 
@@ -36,6 +144,10 @@ def _suicidal_override(text: str):
         "i don't want to live",
         "better off dead",
         "suicide",
+        "i can't go on",
+        "life is not worth living",
+        "i want to disappear",
+        "i feel like giving up",
 
         # Hindi
         "आत्महत्या",
@@ -43,7 +155,8 @@ def _suicidal_override(text: str):
 
         # Telugu
         "చావాలని ఉంది",
-        "ఆత్మహత్య"
+        "ఆత్మహత్య",
+        "బతకాలని అనిపించడం లేదు"
     ]
 
     for p in phrases:
@@ -54,7 +167,167 @@ def _suicidal_override(text: str):
 
 
 # =====================================================
-# 🧠 CONTEXT DETECTION
+# MULTILINGUAL EMOTION DETECTION
+# =====================================================
+
+def _multilingual_override(text):
+
+    t = text.lower()
+
+    patterns = {
+
+        "Sad": [
+            "dukhi hun",
+            "bahut udaas",
+            "naaku baadha ga undi"
+        ],
+
+        "Anxiety": [
+            "tension",
+            "bahut darr",
+            "chala tension ga undi"
+        ],
+
+        "Happy": [
+            "bahut khush",
+            "chala happy ga undi"
+        ]
+    }
+
+    for emotion, phrases in patterns.items():
+        for p in phrases:
+            if p in t:
+                return emotion, 0.85
+
+    return None
+
+# =====================================================
+# FULL MULTILINGUAL EMOTION DETECTOR
+# Supports English, Hindi, Telugu
+# =====================================================
+
+def detect_multilingual_emotion(text):
+
+    t = text.lower()
+
+    patterns = {
+
+        "Happy": [
+
+            # English
+            "i am happy",
+            "feeling great",
+            "i feel good",
+
+            # Hindi
+            "main khush hoon",
+            "bahut khush hoon",
+            "aaj bahut accha lag raha hai",
+
+            # Telugu
+            "నేను సంతోషంగా ఉన్నాను",
+            "చాలా సంతోషంగా ఉంది",
+
+            # transliteration
+            "nenu happy ga unna",
+            "chala santosham ga undi"
+        ],
+
+        "Sad": [
+
+            # English
+            "i feel sad",
+            "i feel down",
+
+            # Hindi
+            "main udaas hoon",
+            "bahut udaas hoon",
+
+            # Telugu
+            "నాకు బాధగా ఉంది",
+            "నేను బాధగా ఉన్నాను",
+
+            # transliteration
+            "naaku baadha ga undi",
+            "chala baadha ga undi"
+        ],
+
+        "Depression": [
+
+            # English
+            "life is pointless",
+            "nothing matters",
+            "i feel empty",
+
+            # Hindi
+            "zindagi ka koi matlab nahi",
+            "sab bekaar hai",
+
+            # Telugu
+            "జీవితం అర్థం లేదు",
+            "ఏదీ బాగోలేదు"
+        ],
+
+        "Anxiety": [
+
+            # English
+            "i feel anxious",
+            "i am stressed",
+
+            # Hindi
+            "mujhe tension hai",
+            "bahut darr lag raha hai",
+
+            # Telugu
+            "చాలా టెన్షన్ గా ఉంది",
+            "నాకు భయం వేస్తోంది",
+
+            # transliteration
+            "chala tension ga undi",
+            "naaku bayam vesthundi"
+        ],
+
+        "Angry": [
+
+            # English
+            "i am angry",
+            "i am furious",
+
+            # Hindi
+            "mujhe gussa aa raha hai",
+            "bahut gussa hai",
+
+            # Telugu
+            "నాకు కోపం వస్తోంది",
+            "చాలా కోపంగా ఉంది",
+
+            # transliteration
+            "naaku kopam vastundi"
+        ],
+
+        "Neutral": [
+
+            # English
+            "i feel okay",
+            "just normal",
+
+            # Hindi
+            "sab theek hai",
+
+            # Telugu
+            "సరే ఉంది"
+        ]
+    }
+
+    for emotion, phrases in patterns.items():
+        for p in phrases:
+            if p in t:
+                return emotion, 0.90
+
+    return None
+
+# =====================================================
+# CONTEXT DETECTION
 # =====================================================
 
 def _context_override(text: str):
@@ -89,7 +362,10 @@ def _context_override(text: str):
             "i feel anxious",
             "i feel worried",
             "i feel stressed",
-            "i feel overwhelmed"
+            "i feel overwhelmed",
+            "panic attack",
+            "i am scared",
+            "i feel terrified"
         ],
 
         "Angry": [
@@ -123,7 +399,6 @@ def _simple_word_override(text: str):
     word = text.lower().strip()
 
     simple_map = {
-
         "happy": "Happy",
         "sad": "Sad",
         "depressed": "Depression",
@@ -139,24 +414,16 @@ def _simple_word_override(text: str):
 
 
 # =====================================================
-# 🤖 HUGGINGFACE AI
+# HUGGINGFACE MODEL
 # =====================================================
 
 def _call_huggingface(text: str):
 
     payload = {"inputs": text}
 
-    try:
+    for attempt in range(2):
 
-        response = requests.post(
-            HF_MODEL_URL,
-            headers=HEADERS,
-            json=payload,
-            timeout=20
-        )
-
-        if response.status_code == 503:
-            time.sleep(2)
+        try:
 
             response = requests.post(
                 HF_MODEL_URL,
@@ -165,35 +432,48 @@ def _call_huggingface(text: str):
                 timeout=20
             )
 
-    except Exception:
-        return "Neutral", 0.0
+            if response.status_code == 503:
+                time.sleep(2)
+                continue
 
-    if response.status_code != 200:
-        return "Neutral", 0.0
+            if response.status_code != 200:
+                return "Neutral", 0.5
 
-    data = response.json()
+            data = response.json()
 
-    if isinstance(data, list) and len(data) > 0:
+            if isinstance(data, list) and len(data) > 0:
 
-        best = max(data[0], key=lambda x: x["score"])
+                emotions = data[0]
 
-        label = best["label"].lower()
-        score = float(best["score"])
+                if not emotions:
+                    return "Neutral", 0.5
 
-        if label in ["joy", "love"]:
-            return "Happy", score
+                best = max(emotions, key=lambda x: x.get("score", 0))
 
-        elif label == "sadness":
-            return "Sad", score
+                label = best.get("label", "").lower()
+                score = float(best.get("score", 0))
 
-        elif label == "anger":
-            return "Angry", score
+                if label in ["joy", "love"]:
+                    return "Happy", score
 
-        elif label == "fear":
-            return "Anxiety", score
+                elif label == "sadness":
 
-        elif label == "neutral":
-            return "Neutral", score
+                    if score > 0.85:
+                        return "Depression", score
+
+                    return "Sad", score
+
+                elif label == "anger":
+                    return "Angry", score
+
+                elif label == "fear":
+                    return "Anxiety", score
+
+                elif label == "neutral":
+                    return "Neutral", score
+
+        except Exception:
+            time.sleep(1)
 
     return "Neutral", 0.5
 
@@ -209,9 +489,22 @@ def predict_emotion(text: str):
 
     text = normalize_text(text)
 
+    if emergency_signal(text):
+        return {"emotion": "Suicidal", "confidence": 0.98}
+
+    if detect_cognitive_distortion(text):
+        return {"emotion": "Depression", "confidence": 0.9}
+
     suicidal = _suicidal_override(text)
     if suicidal:
         return {"emotion": suicidal[0], "confidence": suicidal[1]}
+
+    multi = _multilingual_override(text)
+    if multi:
+        return {"emotion": multi[0], "confidence": multi[1]}
+    multi2 = detect_multilingual_emotion(text)
+    if multi2:
+        return {"emotion": multi2[0], "confidence": multi2[1]}
 
     context = _context_override(text)
     if context:
@@ -223,6 +516,14 @@ def predict_emotion(text: str):
 
     emotion, confidence = _call_huggingface(text)
 
+    confidence *= detect_intensity(text)
+    confidence *= length_boost(text)
+
+    confidence = min(confidence, 1.0)
+
+    if detect_negation(text) and emotion == "Happy":
+        emotion = "Sad"
+
     if confidence < 0.40:
         emotion = "Neutral"
 
@@ -233,220 +534,252 @@ def predict_emotion(text: str):
 
 
 # =====================================================
-# SEVERITY
+# EMOTION MEMORY
+# =====================================================
+
+def emotion_memory_adjustment(current_emotion, history):
+
+    if not history:
+        return current_emotion
+
+    last_two = history[-2:]
+
+    if last_two == ["Sad", "Sad"] and current_emotion == "Sad":
+        return "Depression"
+
+    sad_count = history[-3:].count("Sad")
+
+    if sad_count >= 2 and current_emotion == "Sad":
+        return "Depression"
+
+    return current_emotion
+
+
+# =====================================================
+# MOOD VOLATILITY
+# =====================================================
+
+def detect_mood_volatility(history):
+
+    if not history or len(history) < 4:
+        return "stable"
+
+    changes = 0
+
+    for i in range(1, len(history)):
+        if history[i] != history[i-1]:
+            changes += 1
+
+    if changes >= len(history) / 2:
+        return "high_volatility"
+
+    return "stable"
+
+
+# =====================================================
+# NEW: BURNOUT DETECTION
+# =====================================================
+
+def detect_burnout(history):
+
+    if len(history) < 3:
+        return False
+
+    pattern = history[-3:]
+
+    if pattern == ["Anxiety", "Anxiety", "Sad"]:
+        return True
+
+    return False
+
+
+# =====================================================
+# NEW: EMOTIONAL STABILITY
+# =====================================================
+
+def emotional_stability(history):
+
+    if not history or len(history) < 4:
+        return "unknown"
+
+    unique = len(set(history))
+
+    if unique >= 4:
+        return "unstable"
+
+    elif unique == 3:
+        return "moderate"
+
+    return "stable"
+
+
+# =====================================================
+# NEW: EMOTION EXPLANATION
+# =====================================================
+
+def explain_emotion(emotion):
+
+    messages = {
+
+        "Happy": "User shows positive emotional signals",
+        "Sad": "User expresses sadness or disappointment",
+        "Anxiety": "User shows stress or worry",
+        "Angry": "User expresses frustration or anger",
+        "Depression": "User shows strong depressive signals",
+        "Suicidal": "Critical emotional distress detected"
+    }
+
+    return messages.get(emotion, "General emotional state detected")
+
+
+# =====================================================
+# SEVERITY DETECTION
 # =====================================================
 
 def detect_severity(emotion, confidence):
 
     if emotion == "Suicidal":
+        return "critical"
+
+    if emotion == "Depression":
         return "high"
 
-    if confidence >= 0.85:
-        return "high"
-
-    elif confidence >= 0.65:
-        return "medium"
+    if emotion in ["Sad", "Anxiety", "Angry"]:
+        if confidence >= 0.75:
+            return "moderate"
+        return "low"
 
     return "low"
 
 
 # =====================================================
-# RISK
+# RISK DETECTION
 # =====================================================
 
 def detect_risk(emotion):
 
-    if emotion == "Suicidal":
-        return "critical"
+    risk_map = {
 
-    elif emotion == "Depression":
-        return "high"
+        "Happy": "low",
+        "Neutral": "low",
 
-    elif emotion in ["Sad", "Angry", "Anxiety"]:
-        return "moderate"
+        "Sad": "medium",
+        "Anxiety": "medium",
+        "Angry": "medium",
 
-    return "low"
+        "Depression": "high",
+
+        "Suicidal": "critical"
+    }
+
+    return risk_map.get(emotion, "low")
 
 
 # =====================================================
-# MENTAL HEALTH INDEX
+# MENTAL HEALTH INDEX (0 - 100)
 # =====================================================
 
 def calculate_mhi(emotion, severity, risk):
 
-    base_scores = {
+    score = 80
 
-        "Happy": 85,
-        "Neutral": 70,
-        "Anxiety": 45,
-        "Sad": 40,
-        "Angry": 50,
-        "Depression": 25,
-        "Suicidal": 5
+    emotion_penalty = {
+
+        "Happy": 0,
+        "Neutral": 5,
+        "Sad": 15,
+        "Anxiety": 20,
+        "Angry": 15,
+        "Depression": 40,
+        "Suicidal": 70
     }
 
-    score = base_scores.get(emotion, 60)
+    score -= emotion_penalty.get(emotion, 10)
 
     if severity == "high":
         score -= 10
 
-    if risk == "critical":
-        score = min(score, 10)
+    if severity == "critical":
+        score -= 20
 
-    return max(0, min(score, 100))
+    if risk == "critical":
+        score -= 20
+
+    score = max(0, min(score, 100))
+
+    return score
 
 
 # =====================================================
-# 📈 EMOTION TREND INTELLIGENCE
+# EMOTION TREND ANALYSIS
 # =====================================================
 
 def analyze_emotion_trend(history):
 
-    emotion_scores = {
-        "Happy": 5,
-        "Neutral": 4,
-        "Angry": 3,
-        "Anxiety": 3,
-        "Sad": 2,
-        "Depression": 1,
-        "Suicidal": 0
-    }
+    if not history or len(history) < 3:
+        return "stable"
 
-    if len(history) < 3:
-        return "insufficient_data"
+    negative = ["Sad", "Depression", "Anxiety"]
 
-    scores = [emotion_scores.get(e, 3) for e in history]
+    recent = history[-3:]
 
-    change = scores[-1] - scores[0]
-
-    if change <= -2:
+    if all(e in negative for e in recent):
         return "declining"
 
-    elif change >= 2:
+    if "Happy" in recent and "Sad" in history[-4:-1]:
         return "improving"
 
     return "stable"
 
 
 # =====================================================
-# 🔮 PREDICT FUTURE MENTAL HEALTH RISK
+# FUTURE RISK PREDICTION
 # =====================================================
 
 def predict_future_risk(history):
 
-    emotion_scores = {
-        "Happy": 5,
-        "Neutral": 4,
-        "Angry": 3,
-        "Anxiety": 3,
-        "Sad": 2,
-        "Depression": 1,
-        "Suicidal": 0
-    }
+    if not history:
+        return "unknown"
 
-    if len(history) < 4:
-        return {
-            "prediction": "insufficient_data",
-            "message": "Need more emotional history"
-        }
+    negative = ["Sad", "Depression", "Anxiety"]
 
-    scores = [emotion_scores.get(e, 3) for e in history]
+    last = history[-5:]
 
-    recent = scores[-4:]
+    count = sum(1 for e in last if e in negative)
 
-    decline_rate = recent[-1] - recent[0]
+    if count >= 4:
+        return "high_risk"
 
-    # 🚨 Critical risk
-    if history[-1] == "Suicidal":
-        return {
-            "prediction": "critical_risk",
-            "message": "🚨 Immediate mental health risk detected"
-        }
+    if count >= 2:
+        return "watch"
 
-    # ⚠ Depression pattern
-    if history[-3:] == ["Sad", "Sad", "Depression"]:
-        return {
-            "prediction": "depression_likely",
-            "message": "⚠ High probability of depression soon"
-        }
+    return "low_risk"
 
-    if history[-2:] == ["Depression", "Depression"]:
-        return {
-            "prediction": "persistent_depression",
-            "message": "⚠ Persistent depression detected"
-        }
-
-    # 📉 declining trend
-    if decline_rate <= -2:
-        return {
-            "prediction": "declining",
-            "message": "⚠ Mental health likely declining"
-        }
-
-    # 📈 improving trend
-    if decline_rate >= 2:
-        return {
-            "prediction": "improving",
-            "message": "😊 Mental health improving"
-        }
-
-    return {
-        "prediction": "stable",
-        "message": "🟡 Mental state stable"
-    }
 
 # =====================================================
-# 🧠 ADAPTIVE MENTAL HEALTH AI
+# ADAPTIVE USER ANALYSIS
 # =====================================================
 
 def adaptive_user_analysis(history):
 
-    emotion_scores = {
-        "Happy": 5,
-        "Neutral": 4,
-        "Angry": 3,
-        "Anxiety": 3,
-        "Sad": 2,
-        "Depression": 1,
-        "Suicidal": 0
-    }
+    if not history:
+        return "unknown"
 
-    if len(history) < 5:
-        return {
-            "baseline": None,
-            "current_score": None,
-            "deviation": None,
-            "adaptive_risk": "insufficient_data"
-        }
+    happy = history.count("Happy")
+    sad = history.count("Sad")
+    anxiety = history.count("Anxiety")
+    depression = history.count("Depression")
 
-    scores = [emotion_scores.get(e, 3) for e in history]
+    negative_total = sad + anxiety + depression
 
-    # User baseline (average past mood)
-    baseline = sum(scores[:-1]) / (len(scores) - 1)
+    if negative_total > happy:
+        return "user_under_stress"
 
-    current = scores[-1]
+    if happy > negative_total:
+        return "emotionally_positive"
 
-    deviation = current - baseline
+    return "mixed_emotional_pattern"
 
-    # Risk classification
-    if deviation <= -2:
-        risk = "high_risk"
-
-    elif deviation <= -1:
-        risk = "moderate_risk"
-
-    elif deviation >= 1:
-        risk = "improving"
-
-    else:
-        risk = "stable"
-
-    return {
-        "baseline_score": round(baseline, 2),
-        "current_score": current,
-        "deviation": round(deviation, 2),
-        "adaptive_risk": risk
-    }
 
 # =====================================================
 # FINAL API
@@ -459,6 +792,9 @@ def final_prediction(text, emotion_history=None):
     emotion = result["emotion"]
     confidence = result["confidence"]
 
+    if emotion_history:
+        emotion = emotion_memory_adjustment(emotion, emotion_history)
+
     severity = detect_severity(emotion, confidence)
     risk = detect_risk(emotion)
 
@@ -467,14 +803,19 @@ def final_prediction(text, emotion_history=None):
     trend = None
     prediction = None
     adaptive = None
+    volatility = None
+    burnout = None
+    stability = None
 
     if emotion_history:
 
         trend = analyze_emotion_trend(emotion_history)
-
         prediction = predict_future_risk(emotion_history)
-
         adaptive = adaptive_user_analysis(emotion_history)
+        volatility = detect_mood_volatility(emotion_history)
+
+        burnout = detect_burnout(emotion_history)
+        stability = emotional_stability(emotion_history)
 
     return {
 
@@ -485,26 +826,9 @@ def final_prediction(text, emotion_history=None):
         "mental_health_index": mhi,
         "trend": trend,
         "future_prediction": prediction,
-        "adaptive_analysis": adaptive
+        "adaptive_analysis": adaptive,
+        "mood_volatility": volatility,
+        "burnout_risk": burnout,
+        "emotional_stability": stability,
+        "emotion_explanation": explain_emotion(emotion)
     }
-
-# =====================================================
-# TESTING
-# =====================================================
-
-if __name__ == "__main__":
-
-    history = ["Happy", "Neutral", "Sad"]
-
-    tests = [
-        "I want to die.",
-        "This situation is frustrating and unfair.",
-        "I feel irritated and annoyed.",
-        "Why does this always happen to me?",
-        "I am upset and furious right now.",
-        "I feel happy today"
-    ]
-
-    for t in tests:
-        print("\nText:", t)
-        print(final_prediction(t, history))
