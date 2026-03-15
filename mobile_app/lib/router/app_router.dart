@@ -8,6 +8,7 @@ import '../screens/login_screen.dart';
 import '../screens/register_screen.dart';
 import '../screens/main_navigation_screen.dart';
 import '../screens/settings_screen.dart';
+import '../screens/crisis_support_screen.dart'; // 🆕 NEW
 
 /// 🔁 Auth Change Notifier (Reactive Routing)
 class AuthNotifier extends ChangeNotifier {
@@ -52,7 +53,7 @@ final GoRouter appRouter = GoRouter(
     return null;
   },
 
-  errorBuilder: (context, state) => Scaffold(   // ✅ Prevent crash on bad route
+  errorBuilder: (context, state) => Scaffold(
     body: Center(
       child: Text(
         "Page not found",
@@ -106,6 +107,17 @@ final GoRouter appRouter = GoRouter(
         const SettingsScreen(),
       ),
     ),
+
+    // ================= CRISIS SUPPORT =================
+   GoRoute(
+  path: "/crisis",
+  pageBuilder: (context, state) => _buildPage(
+    state,
+    CrisisSupportScreen(
+      data: state.extra as Map<String, dynamic>,
+    ),
+  ),
+), 
   ],
 );
 
@@ -116,7 +128,7 @@ CustomTransitionPage _buildPage(
 ) {
   return CustomTransitionPage(
     key: state.pageKey,
-    transitionDuration: const Duration(milliseconds: 250), // ✅ smoother feel
+    transitionDuration: const Duration(milliseconds: 250),
     reverseTransitionDuration: const Duration(milliseconds: 200),
     child: child,
     transitionsBuilder:

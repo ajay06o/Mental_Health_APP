@@ -1,3 +1,4 @@
+from email.mime import text
 import os
 import requests
 import time
@@ -479,6 +480,44 @@ def _call_huggingface(text: str):
 
 
 # =====================================================
+# MIXED EMOTION DETECTION
+# =====================================================
+
+def detect_mixed_emotion(text):
+
+    t = text.lower()
+
+    positive_words = [
+        "happy", "great", "good", "excited", "joy"
+    ]
+
+    negative_words = [
+        "sad", "depressed", "anxious", "worried",
+        "angry", "upset", "tired"
+    ]
+
+    has_positive = any(w in t for w in positive_words)
+    has_negative = any(w in t for w in negative_words)
+
+    # If both exist → prioritize negative emotion
+    if has_positive and has_negative:
+
+        if "depressed" in t:
+            return "Depression", 0.90
+
+        if "anxious" in t or "worried" in t:
+            return "Anxiety", 0.85
+
+        if "sad" in t:
+            return "Sad", 0.85
+
+        if "angry" in t:
+            return "Angry", 0.85
+
+    return None
+
+
+# =====================================================
 # EMOTION PREDICTION PIPELINE
 # =====================================================
 
@@ -502,6 +541,7 @@ def predict_emotion(text: str):
     multi = _multilingual_override(text)
     if multi:
         return {"emotion": multi[0], "confidence": multi[1]}
+
     multi2 = detect_multilingual_emotion(text)
     if multi2:
         return {"emotion": multi2[0], "confidence": multi2[1]}
@@ -514,6 +554,27 @@ def predict_emotion(text: str):
     if simple:
         return {"emotion": simple[0], "confidence": simple[1]}
 
+    mixed = detect_mixed_emotion(text)
+    if mixed:
+        return {"emotion": mixed[0], "confidence": mixed[1]}
+
+    emotion, confidence = _call_huggingface(text)
+
+    confidence *= detect_intensity(text)
+    confidence *= length_boost(text)
+
+    confidence = min(confidence, 1.0)
+
+    if detect_negation(text) and emotion == "Happy":
+        emotion = "Sad"
+
+    if confidence < 0.40:
+        emotion = "Neutral"
+
+    return {
+        "emotion": emotion,
+        "confidence": round(confidence, 4)
+    }
     emotion, confidence = _call_huggingface(text)
 
     confidence *= detect_intensity(text)
