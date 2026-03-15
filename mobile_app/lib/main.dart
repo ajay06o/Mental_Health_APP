@@ -67,7 +67,7 @@ class MentalHealthApp extends StatelessWidget {
           brightness: Brightness.light,
         ),
         scaffoldBackgroundColor: const Color(0xFFF8F9FF),
-        cardTheme: CardTheme(
+        cardTheme: CardThemeData(
           elevation: 8,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
@@ -93,7 +93,7 @@ class MentalHealthApp extends StatelessWidget {
           brightness: Brightness.dark,
         ),
         scaffoldBackgroundColor: const Color(0xFF121212),
-        cardTheme: CardTheme(
+        cardTheme: CardThemeData(
           elevation: 6,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),

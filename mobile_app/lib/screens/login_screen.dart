@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter/foundation.dart';
 
 import '../services/auth_service.dart';
 import '../services/biometric_service.dart';
@@ -77,15 +78,22 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   // ---------------- AUTO BIOMETRIC LOGIN ----------------
+Future<void> _checkAutoBiometricLogin() async {
 
-  Future<void> _checkAutoBiometricLogin() async {
-    final enabled = await BiometricService.isEnabled();
+  // ❗ Skip biometrics on web
+  if (kIsWeb) {
+    setState(() => _checkingAutoLogin = false);
+    return;
+  }
 
-    if (!enabled) {
-      setState(() => _checkingAutoLogin = false);
-      return;
-    }
+  final enabled = await BiometricService.isEnabled();
 
+  if (!enabled) {
+    setState(() => _checkingAutoLogin = false);
+    return;
+  }
+
+  try {
     final authenticated = await BiometricService.authenticate();
 
     if (authenticated && mounted) {
@@ -94,7 +102,10 @@ class _LoginScreenState extends State<LoginScreen>
     } else {
       setState(() => _checkingAutoLogin = false);
     }
+  } catch (_) {
+    setState(() => _checkingAutoLogin = false);
   }
+}
 
   // ------------------------------------------------------
 
@@ -125,7 +136,8 @@ class _LoginScreenState extends State<LoginScreen>
     final password = _passwordController.text.trim();
 
     try {
-      final success = await AuthService.login(email, password);
+      final success = await AuthService.login(email, password)
+    .timeout(const Duration(seconds: 15));
       if (!mounted) return;
 
       if (!success) {
@@ -286,30 +298,48 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Widget _emailField() => TextFormField(
-        controller: _emailController,
-        style: const TextStyle(color: Colors.black),
-        decoration: _inputDecoration("Email", Icons.email_outlined),
-      );
+  controller: _emailController,
+  style: const TextStyle(color: Colors.black),
+  validator: (value) {
+    if (value == null || value.isEmpty) {
+      return "Enter your email";
+    }
+    if (!value.contains("@")) {
+      return "Invalid email";
+    }
+    return null;
+  },
+  decoration: _inputDecoration("Email", Icons.email_outlined),
+);
 
   Widget _passwordField() => TextFormField(
-        controller: _passwordController,
-        obscureText: _obscurePassword,
-        style: const TextStyle(color: Colors.black),
-        decoration: _inputDecoration(
-          "Password",
-          Icons.lock_outline,
-          suffix: IconButton(
-            icon: Icon(
-              _obscurePassword
-                  ? Icons.visibility_off
-                  : Icons.visibility,
-              color: Colors.black54,
-            ),
-            onPressed: () =>
-                setState(() => _obscurePassword = !_obscurePassword),
-          ),
-        ),
-      );
+  controller: _passwordController,
+  obscureText: _obscurePassword,
+  style: const TextStyle(color: Colors.black),
+  validator: (value) {
+    if (value == null || value.isEmpty) {
+      return "Enter your password";
+    }
+    if (value.length < 4) {
+      return "Password too short";
+    }
+    return null;
+  },
+  decoration: _inputDecoration(
+    "Password",
+    Icons.lock_outline,
+    suffix: IconButton(
+      icon: Icon(
+        _obscurePassword
+            ? Icons.visibility_off
+            : Icons.visibility,
+        color: Colors.black54,
+      ),
+      onPressed: () =>
+          setState(() => _obscurePassword = !_obscurePassword),
+    ),
+  ),
+);
 
   Widget _optionsRow() {
     return Row(
@@ -342,7 +372,11 @@ class _LoginScreenState extends State<LoginScreen>
               borderRadius: BorderRadius.circular(18),
             ),
           ),
-          onPressed: _isLoading ? null : _handleLogin,
+          onPressed: _isLoading
+    ? null
+    : () async {
+        await _handleLogin();
+      },
           child: _isLoading
               ? const CircularProgressIndicator(color: Colors.white)
               : const Text(

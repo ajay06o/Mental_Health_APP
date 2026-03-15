@@ -26,8 +26,7 @@ class PredictService {
       );
 
       if (decoded is Map<String, dynamic>) {
-        final String emotion =
-            decoded["emotion"] ?? "Neutral";
+        final String emotion = decoded["emotion"] ?? "Neutral";
 
         final double confidence =
             (decoded["confidence"] is num)
@@ -47,6 +46,16 @@ class PredictService {
 
         final bool emergencyTriggered =
             decoded["emergency_triggered"] ?? false;
+
+        // 🆕 Crisis Support Fields
+        final bool showCrisisSupport =
+            decoded["show_crisis_support"] ?? false;
+
+        final String? crisisMessage =
+            decoded["message"];
+
+        final List<dynamic>? helplines =
+            decoded["helplines"];
 
         // 🆕 NEW AI FIELDS (SAFE OPTIONAL)
         final String? trend = decoded["trend"];
@@ -103,6 +112,11 @@ class PredictService {
           "mental_health_index": mhi,
           "emergency_triggered": emergencyTriggered,
 
+          // 🆕 Crisis Support Fields
+          "show_crisis_support": showCrisisSupport,
+          "crisis_message": crisisMessage,
+          "helplines": helplines,
+
           // 🧠 AI Intelligence Layers
           "trend": trend,
           "future_prediction": futurePrediction,
@@ -129,7 +143,10 @@ class PredictService {
       "mental_health_index": 70,
       "emergency_triggered": false,
 
-      // new fields fallback
+      "show_crisis_support": false,
+      "crisis_message": null,
+      "helplines": null,
+
       "trend": null,
       "future_prediction": null,
       "adaptive_analysis": null,

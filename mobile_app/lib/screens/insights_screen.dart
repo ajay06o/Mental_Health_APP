@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/predict_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class InsightsScreen extends StatefulWidget {
   const InsightsScreen({super.key});
@@ -15,6 +16,8 @@ class _InsightsScreenState extends State<InsightsScreen>
   late Future<List<Map<String, dynamic>>> _historyFuture;
   late AnimationController _controller;
   late Animation<double> _fade;
+
+  bool _crisisDialogShown = false;
 
   @override
   void initState() {
@@ -40,6 +43,37 @@ class _InsightsScreenState extends State<InsightsScreen>
       _historyFuture = PredictService.fetchHistory();
     });
   }
+  void _showCrisisSupportDialog() {
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) {
+      return AlertDialog(
+        title: const Text("⚠️ Support Available"),
+        content: const Text(
+          "Your recent emotional signals indicate high distress.\n\n"
+          "You are not alone. Please consider contacting a support helpline.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              final Uri phone = Uri(
+                scheme: 'tel',
+                path: "18005990019",
+              );
+              await launchUrl(phone);
+            },
+            child: const Text("Call Kiran Helpline"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Close"),
+          ),
+        ],
+      );
+    },
+  );
+}
 
   @override
   Widget build(BuildContext context) {
@@ -77,6 +111,20 @@ class _InsightsScreenState extends State<InsightsScreen>
                 }
 
                 final data = snapshot.data ?? [];
+                /// 🚨 Crisis Detection
+/// 🚨 Crisis Detection (show only once)
+if (!_crisisDialogShown &&
+    data.any((e) =>
+        (e["emotion"] ?? "")
+            .toString()
+            .toLowerCase() == "suicidal")) {
+
+  _crisisDialogShown = true;
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    _showCrisisSupportDialog();
+  });
+}
 
                 if (data.isEmpty) {
                   return const Center(

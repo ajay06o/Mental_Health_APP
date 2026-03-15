@@ -356,9 +356,23 @@ def history(user: User = Depends(get_current_user), db: Session = Depends(get_db
     for r in records
 ]
 
-# =====================================================
-# 🧠 PREDICT + SAFE EMERGENCY EMAIL
-# =====================================================
+CRISIS_HELPLINES = [
+    {
+        "name": "Kiran Mental Health Helpline",
+        "phone": "18005990019",
+        "available": "24/7"
+    },
+    {
+        "name": "AASRA Suicide Prevention",
+        "phone": "+912227546669",
+        "available": "24/7"
+    },
+    {
+        "name": "Vandrevala Foundation",
+        "phone": "9999666555",
+        "available": "24/7"
+    }
+]
 # =====================================================
 # 🧠 PREDICT + SAFE EMERGENCY EMAIL (UPDATED)
 # =====================================================
@@ -472,7 +486,7 @@ This is an automated safety alert.
     # =====================================================
     # API Response
     # =====================================================
-    return {
+    response = {
 
         "emotion": emotion,
         "confidence": confidence,
@@ -486,7 +500,23 @@ This is an automated safety alert.
         "adaptive_analysis": adaptive_analysis,
 
         "emergency_triggered": emergency_triggered,
+
+        # default
+        "show_crisis_support": False,
     }
+
+    # =====================================================
+    # Crisis Support Trigger
+    # =====================================================
+    if emotion == "Suicidal":
+        response["show_crisis_support"] = True
+        response["message"] = (
+            "You are not alone. Support is available. "
+            "Please consider reaching out to one of the helplines below."
+        )
+        response["helplines"] = CRISIS_HELPLINES
+
+    return response
 
 # =====================================================
 # DELETE HISTORY ITEM
