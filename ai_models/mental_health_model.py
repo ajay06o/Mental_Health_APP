@@ -1,12 +1,13 @@
-from email.mime import text
+
 import os
 import requests
 import time
 
 
+
 HF_API_TOKEN = os.getenv("HF_API_TOKEN")
 
-HF_MODEL_URL = "https://router.huggingface.co/hf-inference/models/cardiffnlp/twitter-xlm-roberta-base-sentiment"
+HF_MODEL_URL = "https://router.huggingface.co/hf-inference/models/j-hartmann/emotion-english-distilroberta-base"
 
 HEADERS = {
     "Authorization": f"Bearer {HF_API_TOKEN}"
@@ -139,26 +140,28 @@ def _suicidal_override(text: str):
     t = text.lower()
 
     phrases = [
-        "want to die",
-        "kill myself",
-        "end my life",
-        "i don't want to live",
-        "better off dead",
-        "suicide",
-        "i can't go on",
-        "life is not worth living",
-        "i want to disappear",
-        "i feel like giving up",
 
-        # Hindi
-        "आत्महत्या",
-        "मरना चाहता",
+    # English
+    "want to die",
+    "kill myself",
+    "end my life",
+    "i want to die",
+    "i wish i was dead",
+    "life is not worth living",
+    "i don't want to live",
+    "i want to disappear",
+    "i can't go on",
 
-        # Telugu
-        "చావాలని ఉంది",
-        "ఆత్మహత్య",
-        "బతకాలని అనిపించడం లేదు"
-    ]
+    # Hindi
+    "आत्महत्या",
+    "मरना चाहता हूँ",
+    "जीना नहीं चाहता",
+
+    # Telugu
+    "చావాలని ఉంది",
+    "ఆత్మహత్య",
+    "బతకాలని అనిపించడం లేదు"
+]
 
     for p in phrases:
         if p in t:
@@ -454,14 +457,12 @@ def _call_huggingface(text: str):
                 label = best.get("label", "").lower()
                 score = float(best.get("score", 0))
 
-                if label in ["joy", "love"]:
+                if label == "joy":
                     return "Happy", score
 
                 elif label == "sadness":
-
                     if score > 0.85:
                         return "Depression", score
-
                     return "Sad", score
 
                 elif label == "anger":
@@ -472,6 +473,9 @@ def _call_huggingface(text: str):
 
                 elif label == "neutral":
                     return "Neutral", score
+
+                elif label == "disgust":
+                    return "Angry", score
 
         except Exception:
             time.sleep(1)
@@ -517,6 +521,41 @@ def detect_mixed_emotion(text):
     return None
 
 
+def emotion_synonyms(text):
+
+    t = text.lower()
+
+    synonyms = {
+
+        "Happy": [
+            "delighted", "excited", "joyful", "thrilled", "pleased"
+        ],
+
+        "Sad": [
+            "unhappy", "miserable", "down", "gloomy"
+        ],
+
+        "Depression": [
+            "hopeless", "worthless", "empty", "numb"
+        ],
+
+        "Anxiety": [
+            "worried", "nervous", "panicking", "uneasy"
+        ],
+
+        "Angry": [
+            "furious", "frustrated", "irritated", "annoyed"
+        ]
+    }
+
+    for emotion, words in synonyms.items():
+        for w in words:
+            if w in t:
+                return emotion, 0.88
+
+    return None
+
+
 # =====================================================
 # EMOTION PREDICTION PIPELINE
 # =====================================================
@@ -554,6 +593,11 @@ def predict_emotion(text: str):
     if simple:
         return {"emotion": simple[0], "confidence": simple[1]}
 
+# NEW: synonym detection
+    syn = emotion_synonyms(text)
+    if syn:
+       return {"emotion": syn[0], "confidence": syn[1]}
+
     mixed = detect_mixed_emotion(text)
     if mixed:
         return {"emotion": mixed[0], "confidence": mixed[1]}
@@ -575,23 +619,7 @@ def predict_emotion(text: str):
         "emotion": emotion,
         "confidence": round(confidence, 4)
     }
-    emotion, confidence = _call_huggingface(text)
-
-    confidence *= detect_intensity(text)
-    confidence *= length_boost(text)
-
-    confidence = min(confidence, 1.0)
-
-    if detect_negation(text) and emotion == "Happy":
-        emotion = "Sad"
-
-    if confidence < 0.40:
-        emotion = "Neutral"
-
-    return {
-        "emotion": emotion,
-        "confidence": round(confidence, 4)
-    }
+  
 
 
 # =====================================================
