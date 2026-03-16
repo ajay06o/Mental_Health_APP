@@ -43,37 +43,7 @@ class _InsightsScreenState extends State<InsightsScreen>
       _historyFuture = PredictService.fetchHistory();
     });
   }
-  void _showCrisisSupportDialog() {
-  showDialog(
-    context: context,
-    barrierDismissible: false,
-    builder: (context) {
-      return AlertDialog(
-        title: const Text("⚠️ Support Available"),
-        content: const Text(
-          "Your recent emotional signals indicate high distress.\n\n"
-          "You are not alone. Please consider contacting a support helpline.",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              final Uri phone = Uri(
-                scheme: 'tel',
-                path: "18005990019",
-              );
-              await launchUrl(phone);
-            },
-            child: const Text("Call Kiran Helpline"),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Close"),
-          ),
-        ],
-      );
-    },
-  );
-}
+
 
   @override
   Widget build(BuildContext context) {
@@ -121,9 +91,7 @@ if (!_crisisDialogShown &&
 
   _crisisDialogShown = true;
 
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    _showCrisisSupportDialog();
-  });
+  
 }
 
                 if (data.isEmpty) {

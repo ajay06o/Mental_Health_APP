@@ -1,4 +1,4 @@
-
+from email.mime import text
 import os
 import requests
 import time
@@ -234,7 +234,9 @@ def detect_multilingual_emotion(text):
 
             # transliteration
             "nenu happy ga unna",
-            "chala santosham ga undi"
+            "chala santosham ga undi",
+            "chala happy ga undi",
+            "chala anandham ga unanu"
         ],
 
         "Sad": [
@@ -557,9 +559,88 @@ def emotion_synonyms(text):
 
 
 # =====================================================
-# EMOTION PREDICTION PIPELINE
+# EMOJI EMOTION DETECTION
 # =====================================================
 
+# =====================================================
+# ADVANCED EMOJI EMOTION DETECTOR (100+ EMOJIS)
+# =====================================================
+
+def detect_emoji_emotion(text):
+
+    emoji_map = {
+
+        "Happy": [
+            "😊","😁","😄","😃","🙂","☺️","🥰","😍","🤩","😺",
+            "😸","😹","🎉","🥳","😆","😋","😎","🌞","🌈","💖"
+        ],
+
+        "Sad": [
+            "😔","😞","😢","😥","☹️","🙁","😿","🥺","😓",
+            "😟","😣","😖","😭","💧","🌧️"
+        ],
+
+        "Depression": [
+            "💔","🥀","🖤","😞","😔","😢","😭","🥺",
+            "🌑","🌧","💭","😶","😑","😐"
+        ],
+
+        "Anxiety": [
+            "😰","😨","😟","😬","😧","😦","😱","🫨",
+            "😳","😖","😓","😵","😵‍💫"
+        ],
+
+        "Angry": [
+            "😡","🤬","😠","👿","💢","😤","🔥",
+            "😾","🤯","👊"
+        ],
+
+        "Suicidal": [
+            "💀","☠️","⚰️","🪦","🩸","🔪","🆘"
+        ],
+
+        "Neutral": [
+            "😐","😶","🤔","🫤","🙃","😑"
+        ]
+    }
+    
+
+
+    # -------------------------------------------------
+    # Detect emoji presence
+    # -------------------------------------------------
+    for emotion, emojis in emoji_map.items():
+        for e in emojis:
+            if e in text:
+                return emotion, 0.92
+
+    return None
+
+
+
+
+# =====================================================
+# EMOJI INTENSITY BOOST
+# =====================================================
+
+def emoji_intensity(text):
+
+    strong_emojis = ["😭", "💔", "😢"]
+
+    count = sum(text.count(e) for e in strong_emojis)
+
+    if count >= 3:
+        return 1.3
+
+    if count == 2:
+        return 1.15
+
+    return 1.0
+
+
+# =====================================================
+# EMOTION PREDICTION PIPELINE
+# =====================================================
 def predict_emotion(text: str):
 
     if not text or not text.strip():
@@ -567,6 +648,19 @@ def predict_emotion(text: str):
 
     text = normalize_text(text)
 
+    # EMOJI DETECTION
+    emoji = detect_emoji_emotion(text)
+
+    if emoji and len(text) < 5:  # emoji-only messages
+        emotion = emoji[0]
+        confidence = emoji[1] * emoji_intensity(text)
+
+        return {
+        "emotion": emotion,
+        "confidence": min(confidence, 1.0)
+        }
+
+    # Continue normal pipeline
     if emergency_signal(text):
         return {"emotion": "Suicidal", "confidence": 0.98}
 
@@ -596,7 +690,7 @@ def predict_emotion(text: str):
 # NEW: synonym detection
     syn = emotion_synonyms(text)
     if syn:
-       return {"emotion": syn[0], "confidence": syn[1]}
+        return {"emotion": syn[0], "confidence": syn[1]}
 
     mixed = detect_mixed_emotion(text)
     if mixed:
@@ -606,6 +700,7 @@ def predict_emotion(text: str):
 
     confidence *= detect_intensity(text)
     confidence *= length_boost(text)
+    confidence *= emoji_intensity(text)   # NEW
 
     confidence = min(confidence, 1.0)
 

@@ -69,6 +69,8 @@ class _HomeScreenState extends State<HomeScreen>
       ),
     );
 
+    
+
     _graphController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
@@ -210,6 +212,12 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         );
       });
+      // 🚨 SHOW HELPLINE IF SUICIDAL
+if (emotion.toLowerCase() == "suicidal") {
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    _showHelplinePopup();
+  });
+}
 
       _emojiController.forward(from: 0);
     } catch (_) {
@@ -255,6 +263,50 @@ class _HomeScreenState extends State<HomeScreen>
         return "😐";
     }
   }
+
+  void _showHelplinePopup() {
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) {
+      return AlertDialog(
+        title: const Text("You are not alone ❤️"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+
+            Text(
+              "If you're feeling overwhelmed, please reach out for help.",
+            ),
+
+            SizedBox(height: 15),
+
+            ListTile(
+              leading: Icon(Icons.phone),
+              title: Text("Suicide Helpline India"),
+              subtitle: Text("9152987821"),
+            ),
+
+            ListTile(
+              leading: Icon(Icons.phone),
+              title: Text("Kiran Mental Health"),
+              subtitle: Text("1800-599-0019"),
+            ),
+
+          ],
+        ),
+        actions: [
+          TextButton(
+            child: const Text("Close"),
+            onPressed: () {
+              Navigator.pop(context);
+            },
+          )
+        ],
+      );
+    },
+  );
+}
 
 
   Widget _emotionCard() {
