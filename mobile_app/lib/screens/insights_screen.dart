@@ -734,7 +734,7 @@ Color _emotionColor(String emotion) {
     case "anxiety":
       return Colors.orangeAccent;
     case "depression":
-      return Colors.deepPurpleAccent;
+      return Colors.purpleAccent; 
     case "suicidal":
       return Colors.redAccent;
     default:

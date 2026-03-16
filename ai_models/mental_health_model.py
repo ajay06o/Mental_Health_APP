@@ -1,15 +1,12 @@
-
 import os
+from pydoc import text
 import requests
 import time
-
-
-
-
+from langdetect import detect
 
 HF_API_TOKEN = os.getenv("HF_API_TOKEN")
 
-HF_MODEL_URL = "https://router.huggingface.co/hf-inference/models/j-hartmann/emotion-english-distilroberta-base"
+HF_MODEL_URL = "https://router.huggingface.co/hf-inference/models/cardiffnlp/twitter-xlm-roberta-base-sentiment"
 
 HEADERS = {
     "Authorization": f"Bearer {HF_API_TOKEN}"
@@ -24,6 +21,96 @@ def normalize_text(text: str):
     text = text.strip()
     text = " ".join(text.split())
     return text[:500]
+# =====================================================
+# MIXED LANGUAGE NORMALIZATION
+# =====================================================
+
+def normalize_phrases(text):
+
+    t = text.lower()
+
+    replacements = {
+
+        # Hindi / Hinglish
+        "bahut":"very",
+        "bohot":"very",
+        "zyaada":"very",
+        "accha":"good",
+        "bura":"bad",
+        "udaas":"sad",
+        "gussa":"angry",
+
+        # Telugu-English
+        "chala":"very",
+        "bagundi":"good",
+        "baadha":"sad",
+        "kopam":"angry",
+        "bayam":"fear",
+
+        # emotion phrases
+        "ga undi":"is",
+        "ga unna":"am",
+        "lag raha":"feeling",
+        "lag rahi":"feeling"
+    }
+
+    for k,v in replacements.items():
+        t = t.replace(k,v)
+
+    return t
+
+# =====================================================
+# SHORT NEUTRAL TEXT FILTER
+# =====================================================
+
+def neutral_short_text(text):
+
+    short_words = ["ok","okay","hmm","haan","sare","fine"]
+
+    if text.lower().strip() in short_words:
+        return True
+
+    return False
+# =====================================================
+# LANGUAGE DETECTION
+# =====================================================
+
+def detect_language(text):
+
+    t = text.lower()
+
+    hinglish_words = [
+        "bahut","gussa","udaas","khush","tension",
+        "yaar","dil","accha","bura","nahi"
+    ]
+
+    telugu_english_words = [
+        "ga undi","kopam","baadha","bagundi",
+        "bayam","tension ga","happy ga","sad ga"
+    ]
+
+    if any(w in t for w in hinglish_words):
+        return "Hinglish"
+
+    if any(w in t for w in telugu_english_words):
+        return "Telugu-English"
+
+    try:
+        lang = detect(text)
+
+        if lang == "hi":
+            return "Hindi"
+
+        if lang == "te":
+            return "Telugu"
+
+        if lang == "en":
+            return "English"
+
+        return "Unknown"
+
+    except:
+        return "Unknown"
 
 
 # =====================================================
@@ -70,14 +157,14 @@ def detect_negation(text):
     t = text.lower()
 
     negations = [
-        "not",
-        "never",
-        "no longer",
-        "don't",
-        "do not",
-        "isn't",
-        "wasn't"
-    ]
+"not","never","no longer","don't","do not",
+
+"नहीं",
+"मत",
+
+"కాదు",
+"లేదు"
+]
 
     for n in negations:
         if n in t:
@@ -132,6 +219,30 @@ def detect_cognitive_distortion(text):
 
     return False
 
+# =====================================================
+# SARCASM DETECTION
+# =====================================================
+
+def detect_sarcasm(text):
+
+    t = text.lower()
+
+    sarcasm_patterns = [
+        "yeah right",
+        "great just great",
+        "wow amazing",
+        "perfect just perfect"
+    ]
+
+    if any(p in t for p in sarcasm_patterns):
+        return True
+
+    sarcasm_emojis = ["🙃","😒","😏"]
+
+    if any(e in text for e in sarcasm_emojis):
+        return True
+
+    return False
 
 # =====================================================
 # 🚨 SUICIDAL OVERRIDE
@@ -170,7 +281,21 @@ def _suicidal_override(text: str):
     # Telugu
     "చావాలని ఉంది",
     "ఆత్మహత్య",
-    "బతకాలని అనిపించడం లేదు"
+    "బతకాలని అనిపించడం లేదు",
+    # Hinglish
+    "jeene ka mann nahi karta",
+    "sab khatam karna hai",
+    "mar jana chahta hoon",
+    "jeena nahi hai",
+    "mar jana hai",
+    "life khatam karna hai",
+
+
+    # Telugu-English
+    "brathakali anipinchadam ledu",
+    "life end cheyyali anipistundi",
+    "chachipovali anipistundi",
+    "brathakadam istem ledu"
 ]
 
     for p in phrases:
@@ -179,6 +304,26 @@ def _suicidal_override(text: str):
 
     return None
 
+# =====================================================
+# PASSIVE SUICIDE SIGNAL
+# =====================================================
+
+def passive_suicide_signal(text):
+
+    t = text.lower()
+
+    phrases = [
+        "i wish i could disappear",
+        "life is pointless",
+        "i am tired of everything",
+        "nothing matters anymore",
+        "no reason to live"
+    ]
+
+    if any(p in t for p in phrases):
+        return True
+
+    return False
 
 # =====================================================
 # MULTILINGUAL EMOTION DETECTION
@@ -190,28 +335,95 @@ def _multilingual_override(text):
 
     patterns = {
 
-        "Sad": [
-            "dukhi hun",
-            "bahut udaas",
-            "naaku baadha ga undi"
+        "Happy":[
+
+            # Hinglish
+            "bahut khush hoon",
+            "aaj bahut accha lag raha hai",
+            "life mast hai",
+            "feeling awesome yaar",
+            "bahut happy hoon",
+
+            # Telugu-English
+            "nenu happy ga unna",
+            "chala happy ga undi",
+            "life chala bagundi",
+            "today chala happy ga unna"
         ],
 
-        "Anxiety": [
-            "tension",
-            "bahut darr",
-            "chala tension ga undi"
+        "Sad":[
+
+            # Hinglish
+            "bahut udaas hoon",
+            "dil bahut heavy hai",
+            "mood off hai",
+            "life boring lag rahi hai",
+
+            # Telugu-English
+            "naaku baadha ga undi",
+            "chala sad ga unna",
+            "life chala boring ga undi",
+            "mood off ga undi"
         ],
 
-        "Happy": [
-            "bahut khush",
-            "chala happy ga undi"
+        "Depression":[
+
+            # Hinglish
+            "life ka koi matlab nahi",
+            "sab bekaar lag raha hai",
+            "andar se empty feel ho raha",
+
+            # Telugu-English
+            "life lo meaning ledu",
+            "life pointless ga undi",
+            "nenu empty ga feel avutunna"
+        ],
+
+        "Anxiety":[
+
+            # Hinglish
+            "bahut tension hai",
+            "bahut stress hai",
+            "bahut darr lag raha hai",
+            "panic ho raha hai",
+
+            # Telugu-English
+            "chala tension ga undi",
+            "naaku bayam vesthundi",
+            "chala stress ga undi"
+        ],
+
+        "Angry":[
+
+            # Hinglish
+            "bahut gussa aa raha hai",
+            "bahut irritate ho raha hoon",
+            "yeh bahut frustrating hai",
+
+            # Telugu-English
+            "naaku kopam vastundi",
+            "chala kopam ga undi",
+            "chala irritate ga undi"
+        ],
+
+        "Neutral":[
+
+            # Hinglish
+            "sab theek hai",
+            "normal hai",
+            "kuch special nahi",
+
+            # Telugu-English
+            "normal ga undi",
+            "sare undi",
+            "just normal ga undi"
         ]
     }
 
     for emotion, phrases in patterns.items():
         for p in phrases:
             if p in t:
-                return emotion, 0.85
+                return emotion, 0.86
 
     return None
 
@@ -246,7 +458,15 @@ def detect_multilingual_emotion(text):
             "nenu happy ga unna",
             "chala santosham ga undi",
             "chala happy ga undi",
-            "chala anandham ga unanu"
+            "chala anandham ga unanu",
+            # Hinglish
+            "bahut khush hoon",
+            "life mast hai",
+            "feeling awesome",
+
+            # Telugu-English
+            "nenu happy ga unna",
+            "chala happy ga undi"
         ],
 
         "Sad": [
@@ -265,7 +485,15 @@ def detect_multilingual_emotion(text):
 
             # transliteration
             "naaku baadha ga undi",
-            "chala baadha ga undi"
+            "chala baadha ga undi",
+            
+            # Hinglish
+            "mood off hai",
+            "bahut udaas hoon",
+
+            # Telugu-English
+            "chala sad ga unna",
+            "life boring ga undi"
         ],
 
         "Depression": [
@@ -281,7 +509,14 @@ def detect_multilingual_emotion(text):
 
             # Telugu
             "జీవితం అర్థం లేదు",
-            "ఏదీ బాగోలేదు"
+            "ఏదీ బాగోలేదు",
+            # Hinglish
+            "life ka matlab nahi",
+            "sab bekaar hai",
+
+            # Telugu-English
+            "life pointless ga undi",
+            "life lo meaning ledu"
         ],
 
         "Anxiety": [
@@ -300,7 +535,14 @@ def detect_multilingual_emotion(text):
 
             # transliteration
             "chala tension ga undi",
-            "naaku bayam vesthundi"
+            "naaku bayam vesthundi",
+            # Hinglish
+            "bahut tension hai",
+            "bahut stress hai",
+
+            # Telugu-English
+            "chala tension ga undi",
+            "chala stress ga undi"
         ],
 
         "Angry": [
@@ -318,6 +560,13 @@ def detect_multilingual_emotion(text):
             "చాలా కోపంగా ఉంది",
 
             # transliteration
+            "naaku kopam vastundi",
+            # Hinglish
+            "bahut gussa hai",
+            "bahut irritate ho raha hoon",
+
+            # Telugu-English
+            "chala kopam ga undi",
             "naaku kopam vastundi"
         ],
 
@@ -331,7 +580,12 @@ def detect_multilingual_emotion(text):
             "sab theek hai",
 
             # Telugu
-            "సరే ఉంది"
+            "సరే ఉంది",
+            # Hinglish
+            "sab normal hai",
+
+            # Telugu-English
+            "just normal ga undi"
         ]
     }
 
@@ -453,14 +707,11 @@ def _call_huggingface(text: str):
                 continue
 
             if response.status_code != 200:
-                return "Neutral", 0.5
+                return "Neutral", 0.45
 
             data = response.json()
 
-            if not isinstance(data, list):
-                return "Neutral", 0.5
-
-            if len(data) == 0:
+            if not isinstance(data, list) or len(data) == 0:
                 return "Neutral", 0.5
 
             emotions = data[0]
@@ -473,25 +724,63 @@ def _call_huggingface(text: str):
             label = best.get("label", "").lower()
             score = float(best.get("score", 0))
 
+            t = text.lower()
+
+            # -----------------------------
+            # ENGLISH MODEL LABELS
+            # -----------------------------
+
             if label == "joy":
                 return "Happy", score
 
-            elif label == "sadness":
+            if label == "sadness":
                 if score > 0.85:
                     return "Depression", score
                 return "Sad", score
 
-            elif label == "anger":
+            if label == "anger":
                 return "Angry", score
 
-            elif label == "fear":
+            if label == "fear":
                 return "Anxiety", score
 
-            elif label == "neutral":
+            if label == "disgust":
+                return "Angry", score
+
+            # -----------------------------
+            # MULTILINGUAL MODEL LABELS
+            # -----------------------------
+
+            if label == "positive":
+                return "Happy", score
+
+            if label == "neutral":
                 return "Neutral", score
 
-            elif label == "disgust":
-                return "Angry", score
+            if label == "negative":
+
+                if any(w in t for w in [
+                    "hopeless", "worthless", "empty",
+                    "जीवन बेकार", "जिंदगी बेकार",
+                    "జీవితం అర్థం లేదు"
+                ]):
+                    return "Depression", score
+
+                if any(w in t for w in [
+                    "worried", "panic", "nervous",
+                    "चिंता", "टेंशन",
+                    "టెన్షన్", "భయం"
+                ]):
+                    return "Anxiety", score
+
+                if any(w in t for w in [
+                    "angry", "furious", "rage",
+                    "गुस्सा",
+                    "కోపం"
+                ]):
+                    return "Angry", score
+
+                return "Sad", score
 
         except Exception:
             time.sleep(1)
@@ -507,32 +796,22 @@ def detect_mixed_emotion(text):
 
     t = text.lower()
 
-    positive_words = [
-        "happy", "great", "good", "excited", "joy"
+    transition_words = [
+        "but","however","although",
+        "lekin","par","magar",
+        "kani","but kani"
     ]
 
-    negative_words = [
-        "sad", "depressed", "anxious", "worried",
-        "angry", "upset", "tired"
-    ]
+    if any(w in t for w in transition_words):
 
-    has_positive = any(w in t for w in positive_words)
-    has_negative = any(w in t for w in negative_words)
+        if any(w in t for w in ["anxious","worried","tension","stress","fear"]):
+            return "Anxiety",0.9
 
-    # If both exist → prioritize negative emotion
-    if has_positive and has_negative:
+        if any(w in t for w in ["sad","down","bad","depressed"]):
+            return "Sad",0.9
 
-        if "depressed" in t:
-            return "Depression", 0.90
-
-        if "anxious" in t or "worried" in t:
-            return "Anxiety", 0.85
-
-        if "sad" in t:
-            return "Sad", 0.85
-
-        if "angry" in t:
-            return "Angry", 0.85
+        if any(w in t for w in ["angry","rage","frustrated"]):
+            return "Angry",0.9
 
     return None
 
@@ -543,31 +822,76 @@ def emotion_synonyms(text):
 
     synonyms = {
 
-        "Happy": [
-            "delighted", "excited", "joyful", "thrilled", "pleased"
-        ],
+            "Happy":[
+            "delighted","excited","joyful","thrilled","pleased",
+            "khush","accha","bagundi","happy ga"
+            ],
 
-        "Sad": [
-            "unhappy", "miserable", "down", "gloomy"
-        ],
+            "Sad":[
+            "unhappy","miserable","down","gloomy",
+            "udaas","dukhi","baadha","sad ga"
+            ],
 
-        "Depression": [
-            "hopeless", "worthless", "empty", "numb"
-        ],
+            "Depression":[
+            "hopeless","worthless","empty","numb",
+            "life pointless","meaning ledu","andar se empty"
+            ],
 
-        "Anxiety": [
-            "worried", "nervous", "panicking", "uneasy"
-        ],
+            "Anxiety":[
+            "worried","nervous","panicking","uneasy",
+            "tension","stress","bayam"
+            ],
 
-        "Angry": [
-            "furious", "frustrated", "irritated", "annoyed"
-        ]
-    }
+            "Angry":[
+            "furious","frustrated","irritated","annoyed",
+            "gussa","kopam"
+            ]
+
+        }
 
     for emotion, words in synonyms.items():
         for w in words:
             if w in t:
                 return emotion, 0.88
+
+    return None
+
+# =====================================================
+# CONTEXT EMOTION BOOST
+# =====================================================
+
+def context_emotion_boost(text):
+
+    t = text.lower()
+
+    context_map = {
+
+        "Depression":[
+            "drained",
+            "empty inside",
+            "lost in life",
+            "no motivation",
+            "no energy"
+        ],
+
+        "Anxiety":[
+            "overwhelmed",
+            "heart racing",
+            "cant relax",
+            "constant worry"
+        ],
+
+        "Sad":[
+            "feeling low",
+            "heartbroken",
+            "feeling down today"
+        ]
+    }
+
+    for emotion, words in context_map.items():
+        for w in words:
+            if w in t:
+                return emotion, 0.87
 
     return None
 
@@ -663,8 +987,11 @@ def predict_emotion(text: str):
 
     if not text or not text.strip():
         return {"emotion": "Neutral", "confidence": 0.0}
+    if neutral_short_text(text):
+        return {"emotion": "Neutral", "confidence": 0.9}
 
     text = normalize_text(text)
+    text = normalize_phrases(text)
 
     # EMOJI DETECTION
     emoji = detect_emoji_emotion(text)
@@ -694,6 +1021,9 @@ def predict_emotion(text: str):
     # Continue normal pipeline
     if emergency_signal(text):
         return {"emotion": "Suicidal", "confidence": 0.98}
+    
+    if passive_suicide_signal(text):
+        return {"emotion": "Depression", "confidence": 0.92}
 
     if detect_cognitive_distortion(text):
         return {"emotion": "Depression", "confidence": 0.9}
@@ -722,6 +1052,9 @@ def predict_emotion(text: str):
     syn = emotion_synonyms(text)
     if syn:
         return {"emotion": syn[0], "confidence": syn[1]}
+    context_boost = context_emotion_boost(text)
+    if context_boost:
+        return {"emotion": context_boost[0], "confidence": context_boost[1]}
 
     mixed = detect_mixed_emotion(text)
     if mixed:
@@ -729,11 +1062,26 @@ def predict_emotion(text: str):
 
     emotion, confidence = _call_huggingface(text)
 
+    # ML smoothing
+    confidence = (confidence * 0.85) + 0.15
+    
+    emotion_weights = {
+    "Happy":1.0,
+    "Neutral":0.9,
+    "Sad":1.05,
+    "Anxiety":1.05,
+    "Angry":1.05,
+    "Depression":1.1,
+    "Suicidal":1.15
+    }
+
+    confidence *= emotion_weights.get(emotion,1.0)
+
     confidence *= detect_intensity(text)
     confidence *= length_boost(text)
     confidence *= emoji_intensity(text)
 
-    confidence = min(confidence, 1.0)
+    confidence = min(confidence + 0.1, 1.0)
 
 # -------------------------------------------------
 # Emoji influence
@@ -749,18 +1097,61 @@ def predict_emotion(text: str):
             emotion = emoji_emotion
             confidence = emoji_conf
 
-    if detect_negation(text) and emotion == "Happy":
-        emotion = "Sad"
+# ==========================================
+# NEGATION CORRECTION
+# ==========================================
+    if detect_negation(text):
 
-    if confidence < 0.40:
-        emotion = "Neutral"
+        if emotion == "Happy":
+            emotion = "Sad"
+
+        elif emotion == "Sad":
+            emotion = "Neutral"
+
+        elif emotion == "Anxiety":
+            emotion = "Neutral"
+
+        elif emotion == "Angry":
+            emotion = "Neutral"
 
     return {
         "emotion": emotion,
         "confidence": round(confidence, 4)
     }
   
+# =====================================================
+# SENTENCE EMOTION ANALYSIS
+# =====================================================
 
+import re
+from collections import Counter
+
+def sentence_emotion_analysis(text):
+
+    sentences = re.split(r'[.!?]', text)
+
+    emotions = []
+
+    for s in sentences:
+
+        s = s.strip()
+
+        if len(s) < 4:
+            continue
+
+        result = predict_emotion(s)
+
+        emotions.append(result["emotion"])
+
+    return emotions
+
+
+def dominant_emotion(emotions):
+
+    if not emotions:
+        return None
+
+    return Counter(emotions).most_common(1)[0][0]
 
 # =====================================================
 # EMOTION MEMORY
@@ -1015,10 +1406,13 @@ def adaptive_user_analysis(history):
 # =====================================================
 
 def final_prediction(text, emotion_history=None):
-
     result = predict_emotion(text)
+    language = detect_language(text)
 
-    emotion = result["emotion"]
+    sentence_emotions = sentence_emotion_analysis(text)
+    dominant = dominant_emotion(sentence_emotions)
+
+    emotion = dominant if dominant else result["emotion"]
     confidence = result["confidence"]
 
     if emotion_history:
@@ -1059,5 +1453,8 @@ def final_prediction(text, emotion_history=None):
         "mood_volatility": volatility,
         "burnout_risk": burnout,
         "emotional_stability": stability,
-        "emotion_explanation": explain_emotion(emotion)
+        "emotion_explanation": explain_emotion(emotion),
+        "language": language,
+        "sarcasm_detected": detect_sarcasm(text),
+        "sentence_emotions": sentence_emotions
     }
