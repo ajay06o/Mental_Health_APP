@@ -50,3 +50,4 @@ cryptography>=42.0.0
 cloudinary
 fastapi-mail
 twilio
+langdetect==1.0.9
