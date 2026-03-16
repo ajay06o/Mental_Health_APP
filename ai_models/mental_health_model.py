@@ -1,7 +1,9 @@
-from email.mime import text
+
 import os
 import requests
 import time
+
+
 
 
 
@@ -151,6 +153,14 @@ def _suicidal_override(text: str):
     "i don't want to live",
     "i want to disappear",
     "i can't go on",
+    "I wish I could disappear",
+    "I want everything to stop",
+    "I am tired of living",
+    "I can't do this anymore",
+    "life is meaningless",
+    "no reason to live",
+    "I feel like giving up",
+    "i want everything to end",
 
     # Hindi
     "आत्महत्या",
@@ -447,37 +457,41 @@ def _call_huggingface(text: str):
 
             data = response.json()
 
-            if isinstance(data, list) and len(data) > 0:
+            if not isinstance(data, list):
+                return "Neutral", 0.5
 
-                emotions = data[0]
+            if len(data) == 0:
+                return "Neutral", 0.5
 
-                if not emotions:
-                    return "Neutral", 0.5
+            emotions = data[0]
 
-                best = max(emotions, key=lambda x: x.get("score", 0))
+            if not emotions:
+                return "Neutral", 0.5
 
-                label = best.get("label", "").lower()
-                score = float(best.get("score", 0))
+            best = max(emotions, key=lambda x: x.get("score", 0))
 
-                if label == "joy":
-                    return "Happy", score
+            label = best.get("label", "").lower()
+            score = float(best.get("score", 0))
 
-                elif label == "sadness":
-                    if score > 0.85:
-                        return "Depression", score
-                    return "Sad", score
+            if label == "joy":
+                return "Happy", score
 
-                elif label == "anger":
-                    return "Angry", score
+            elif label == "sadness":
+                if score > 0.85:
+                    return "Depression", score
+                return "Sad", score
 
-                elif label == "fear":
-                    return "Anxiety", score
+            elif label == "anger":
+                return "Angry", score
 
-                elif label == "neutral":
-                    return "Neutral", score
+            elif label == "fear":
+                return "Anxiety", score
 
-                elif label == "disgust":
-                    return "Angry", score
+            elif label == "neutral":
+                return "Neutral", score
+
+            elif label == "disgust":
+                return "Angry", score
 
         except Exception:
             time.sleep(1)
@@ -609,14 +623,18 @@ def detect_emoji_emotion(text):
     # -------------------------------------------------
     # Detect emoji presence
     # -------------------------------------------------
+    detected = []
+
     for emotion, emojis in emoji_map.items():
-        for e in emojis:
-            if e in text:
-                return emotion, 0.92
+        if any(e in text for e in emojis):
+           detected.append(emotion)
+
+    if detected:
+       # majority vote
+       emotion = max(set(detected), key=detected.count)
+       return emotion, 0.92
 
     return None
-
-
 
 
 # =====================================================
@@ -651,14 +669,27 @@ def predict_emotion(text: str):
     # EMOJI DETECTION
     emoji = detect_emoji_emotion(text)
 
-    if emoji and len(text) < 5:  # emoji-only messages
-        emotion = emoji[0]
-        confidence = emoji[1] * emoji_intensity(text)
+# -------------------------------------------------
+# Emoji-only messages
+# -------------------------------------------------
+    if emoji and len(text.strip()) <= 6:
+      emotion = emoji[0]
+      confidence = emoji[1] * emoji_intensity(text)
 
-        return {
+      return {
         "emotion": emotion,
         "confidence": min(confidence, 1.0)
-        }
+    }
+
+# -------------------------------------------------
+# Emoji mixed with text (save for later influence)
+# -------------------------------------------------
+    emoji_conf = None
+    emoji_emotion = None
+
+    if emoji:
+        emoji_emotion = emoji[0]
+        emoji_conf = emoji[1] * emoji_intensity(text)
 
     # Continue normal pipeline
     if emergency_signal(text):
@@ -700,9 +731,23 @@ def predict_emotion(text: str):
 
     confidence *= detect_intensity(text)
     confidence *= length_boost(text)
-    confidence *= emoji_intensity(text)   # NEW
+    confidence *= emoji_intensity(text)
 
     confidence = min(confidence, 1.0)
+
+# -------------------------------------------------
+# Emoji influence
+# -------------------------------------------------
+    if emoji_conf is not None:
+
+        # emoji supports text emotion
+        if emoji_emotion == emotion:
+            confidence = max(confidence, emoji_conf)
+
+        # emoji disagrees with text
+        elif emoji_conf > confidence * 0.85:
+            emotion = emoji_emotion
+            confidence = emoji_conf
 
     if detect_negation(text) and emotion == "Happy":
         emotion = "Sad"
