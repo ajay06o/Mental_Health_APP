@@ -27,6 +27,7 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -189,20 +190,31 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 # =====================================================
 
 
-class LoginRequest(BaseModel):
-    email: str
-    password: str
+
 @app.post("/login", response_model=TokenResponse)
 def login(
-    data: LoginRequest,
+    form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
-    email = data.email.strip().lower()
+    email = (form_data.username or "").strip().lower()
+    password = (form_data.password or "").strip()
+
+    print("LOGIN EMAIL:", email)
+
+    if not email or not password:
+        raise HTTPException(status_code=400, detail="Email and password required")
 
     user = db.query(User).filter(User.email == email).first()
 
-    if not user or not verify_password(data.password, user.password):
+    if not user:
+        print("❌ USER NOT FOUND")
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if not verify_password(password, user.password):
+        print("❌ PASSWORD WRONG")
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    print("✅ LOGIN SUCCESS")
 
     return TokenResponse(
         access_token=create_access_token({"sub": user.email}),
@@ -299,7 +311,7 @@ def update_profile(
     }
 
 
-    # =====================================================
+# =====================================================
 # 🖼 CLOUDINARY PROFILE IMAGE UPLOAD
 # =====================================================
 @app.post("/profile/upload-image")

@@ -92,22 +92,39 @@ class AuthService {
   // =================================================
   // 🔑 LOGIN
   // =================================================
-static Future<bool> login(
-    String email, String password) async {
-  try {
-    final data = await ApiClient.postForm(
-  "/login",
-  {
-    "username": email.trim(),
-    "password": password.trim(),
-  },
-);
+static Future<bool> login(String email, String password) async {
+  for (int attempt = 0; attempt < 2; attempt++) {
+    try {
+      // 🚀 Step 1: Wake server (IMPORTANT for Render)
+      if (attempt == 0) {
+        print("🌙 Waking up server...");
+        await ApiClient.warmUpServer();
+      }
 
-    return await _saveTokensFromResponse(data);
-  } catch (e) {
-    print("LOGIN ERROR: $e");
-    return false;
+      print("🔐 LOGIN ATTEMPT ${attempt + 1} → $email");
+
+      final data = await ApiClient.postForm(
+        "/login",
+        {
+          "username": email.trim(),
+          "password": password.trim(),
+        },
+      );
+
+      print("✅ LOGIN SUCCESS → $data");
+
+      return await _saveTokensFromResponse(data);
+    } catch (e) {
+      print("❌ LOGIN FAILED (Attempt ${attempt + 1}) → $e");
+
+      if (attempt == 1) return false;
+
+      // ⏳ Wait before retry
+      await Future.delayed(const Duration(seconds: 2));
+    }
   }
+
+  return false;
 }
 
   // =================================================

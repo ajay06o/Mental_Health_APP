@@ -207,6 +207,7 @@ if (detail is List) {
       "Request failed (${response.statusCode})";
 }
 
+    print("API ERROR [$message]");
     throw ApiException(message);
   }
 
@@ -235,21 +236,32 @@ if (detail is List) {
     return _parseResponse(response);
   }
 
-  static Future<dynamic> postForm(
-    String endpoint,
-    Map<String, String> body,
-  ) async {
-    final response = await _client.post(
-      Uri.parse("$baseUrl$endpoint"),
-      headers: await _headers(
-        json: false,
-        isForm: true,
-      ),
-      body: body,
-    );
+ static Future<dynamic> postForm(
+  String endpoint,
+  Map<String, String> body,
+) async {
+  final encodedBody = body.entries
+      .map((e) =>
+          "${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}")
+      .join("&");
 
-    return _parseResponse(response);
-  }
+  final response = await _safeRequest(() async {
+    return _client.post(
+      Uri.parse("$baseUrl$endpoint"),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json",
+      },
+      body: encodedBody, // ✅ MANUALLY ENCODED
+    );
+  });
+
+  print("FORM REQUEST BODY → $encodedBody");
+  print("FORM STATUS → ${response.statusCode}");
+  print("FORM RESPONSE → ${response.body}");
+
+  return _parseResponse(response);
+}
 
   // =================================================
   // 🔐 AUTH METHODS
