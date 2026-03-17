@@ -68,42 +68,33 @@ def register_user(user: UserCreate, db: Session) -> User:
 # =====================================================
 # LOGIN USER (SERVICE LAYER)
 # =====================================================
-def login_user(
-    *,
-    email: str,
-    password: str,
-    db: Session,
-) -> dict:
-    """
-    Validate credentials and return access + refresh tokens.
-    """
-
-    # ✅ Normalize input
+def login_user(*, email: str, password: str, db: Session) -> dict:
     email = email.strip().lower()
 
-    if not email or not password:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email and password are required",
-        )
+    print("LOGIN ATTEMPT:", email)
 
     user = db.query(User).filter(User.email == email).first()
 
-    # ✅ Prevent user enumeration attack
+    if not user:
+        print("USER NOT FOUND")
+    
+    if user and not verify_password(password, user.password):
+        print("PASSWORD MISMATCH")
+
     if not user or not verify_password(password, user.password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
         )
 
-    # ✅ Use user ID in token (more stable than email)
+    print("LOGIN SUCCESS:", user.id)
+
     token_payload = {
-        "sub": str(user.id),
-        "email": user.email,
+        "sub": user.email,
     }
 
     return {
-        "access_token": create_access_token(token_payload),
-        "refresh_token": create_refresh_token(token_payload),
-        "token_type": "bearer",
-    }
+    "access_token": create_access_token({"sub": user.email}),
+    "refresh_token": create_refresh_token({"sub": user.email}),
+    "token_type": "bearer",
+}

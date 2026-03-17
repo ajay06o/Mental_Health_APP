@@ -1,9 +1,13 @@
 # =====================================================
 # PATH SETUP
 # =====================================================
+
 import os
 import sys
 import logging
+
+from dotenv import load_dotenv
+load_dotenv()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(BASE_DIR)
@@ -22,10 +26,11 @@ from fastapi import (
     File,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from pydantic import BaseModel
 
 import cloudinary
 import cloudinary.uploader
@@ -115,13 +120,14 @@ def health():
 # =====================================================
 # GLOBAL ERROR HANDLER
 # =====================================================
-@app.exception_handler(Exception)
-async def global_exception_handler(request, exc):
-    logger.exception("Unhandled backend error")
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Internal Server Error"},
-    )
+#@app.exception_handler(Exception)
+#async def global_exception_handler(request, exc):
+ #   logger.exception("Unhandled backend error")
+  #  return JSONResponse(
+   #     status_code=500,
+    #    content={"detail": "Internal Server Error"},
+    #)
+      
 
 # =====================================================
 # CORS
@@ -143,6 +149,9 @@ def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    if not token:
+        raise HTTPException(status_code=401, detail="Token missing")
+
     email = verify_access_token(token)
 
     if not email:
@@ -178,15 +187,21 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 # =====================================================
 # LOGIN
 # =====================================================
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
 @app.post("/login", response_model=TokenResponse)
 def login(
-    form: OAuth2PasswordRequestForm = Depends(),
+    data: LoginRequest,
     db: Session = Depends(get_db),
 ):
-    email = form.username.strip().lower()
+    email = data.email.strip().lower()
+
     user = db.query(User).filter(User.email == email).first()
 
-    if not user or not verify_password(form.password, user.password):
+    if not user or not verify_password(data.password, user.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     return TokenResponse(
@@ -195,7 +210,7 @@ def login(
         token_type="bearer",
     )
 
-    # =====================================================
+# =====================================================
 # REFRESH TOKEN
 # =====================================================
 @app.post("/refresh", response_model=TokenResponse)
@@ -543,3 +558,5 @@ def delete_history(
     db.commit()
 
     return {"message": "History deleted successfully"}
+
+print("SECRET_KEY:", os.getenv("SECRET_KEY"))

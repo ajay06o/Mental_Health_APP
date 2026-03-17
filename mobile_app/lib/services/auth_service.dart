@@ -56,20 +56,26 @@ class AuthService {
   // 📝 REGISTER
   // =================================================
   static Future<bool> register(
-      String email, String password) async {
-    try {
-      await ApiClient.postPublic(
-        "/register",
-        {
-          "email": email.trim(),
-          "password": password.trim(),
-        },
-      );
-      return true;
-    } catch (_) {
-      return false;
-    }
+    String email, String password) async {
+  try {
+    print("REGISTER EMAIL: $email");
+
+    final res = await ApiClient.postPublic(
+      "/register",
+      {
+        "email": email.trim(),
+        "password": password.trim(),
+      },
+    );
+
+    print("REGISTER SUCCESS: $res");
+
+    return true;
+  } catch (e) {
+    print("REGISTER ERROR: $e");
+    return false;
   }
+}
 
   // =================================================
   // 🆕 REGISTER + AUTO LOGIN
@@ -86,22 +92,23 @@ class AuthService {
   // =================================================
   // 🔑 LOGIN
   // =================================================
-  static Future<bool> login(
-      String email, String password) async {
-    try {
-      final data = await ApiClient.postForm(
-        "/login",
-        {
-          "username": email.trim(),
-          "password": password.trim(),
-        },
-      );
+static Future<bool> login(
+    String email, String password) async {
+  try {
+    final data = await ApiClient.postForm(
+  "/login",
+  {
+    "username": email.trim(),
+    "password": password.trim(),
+  },
+);
 
-      return await _saveTokensFromResponse(data);
-    } catch (_) {
-      return false;
-    }
+    return await _saveTokensFromResponse(data);
+  } catch (e) {
+    print("LOGIN ERROR: $e");
+    return false;
   }
+}
 
   // =================================================
   // 🔐 SAVE TOKENS

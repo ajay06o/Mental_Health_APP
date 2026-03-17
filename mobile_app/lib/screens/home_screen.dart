@@ -654,34 +654,62 @@ return FadeTransition(
 
             lineBarsData: [
               LineChartBarData(
-                spots: _spots,
-                isCurved: true,
-                barWidth: 4,
-                gradient: const LinearGradient(
-                  colors: [
-                    Color(0xFF7A6FF0),
-                    Color(0xFF5C9EFF),
-                  ],
-                ),
-                dotData: FlDotData(
-                  show: true,
-                  getDotPainter:
-                      (spot, percent, bar, index) {
-                    if (index == lastIndex) {
-                      return FlDotCirclePainter(
-                        radius: 6,
-                        color: const Color(0xFF7A6FF0),
-                        strokeWidth: 3,
-                        strokeColor: Colors.white,
-                      );
-                    }
-                    return FlDotCirclePainter(
-                      radius: 3,
-                      color: const Color(0xFF5C9EFF),
-                    );
-                  },
-                ),
-              ),
+  spots: _spots,
+
+  // 🔥 SMOOTH CURVE
+  isCurved: true,
+  curveSmoothness: 0.35,
+
+  // 🔥 PREMIUM LINE
+  barWidth: 4,
+  isStrokeCapRound: true,
+
+  // 🔥 GRADIENT LINE
+  gradient: const LinearGradient(
+    colors: [
+      Color(0xFF7A6FF0),
+      Color(0xFF5C9EFF),
+    ],
+  ),
+
+  // 🔥 GLOW EFFECT
+  shadow: Shadow(
+    color: const Color(0xFF7A6FF0).withOpacity(0.4),
+    blurRadius: 12,
+  ),
+
+  // 🔥 AREA UNDER GRAPH (BIG DIFFERENCE)
+  belowBarData: BarAreaData(
+    show: true,
+    gradient: LinearGradient(
+      colors: [
+        const Color(0xFF7A6FF0).withOpacity(0.25),
+        const Color(0xFF5C9EFF).withOpacity(0.05),
+        Colors.transparent,
+      ],
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+    ),
+  ),
+
+  // 🔥 CLEAN DOTS (ONLY LAST POINT BIG)
+  dotData: FlDotData(
+    show: true,
+    getDotPainter: (spot, percent, bar, index) {
+      if (index == lastIndex) {
+        return FlDotCirclePainter(
+          radius: 7,
+          color: Colors.white,
+          strokeWidth: 4,
+          strokeColor: const Color(0xFF7A6FF0),
+        );
+      }
+      return FlDotCirclePainter(
+        radius: 0, // 👈 hide old dots (premium look)
+      );
+    },
+  ),
+),
             ],
           ),
         ),

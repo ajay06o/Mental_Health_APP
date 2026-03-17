@@ -193,10 +193,19 @@ class ApiClient {
       return decoded;
     }
 
-    final message =
-        decoded["detail"] ??
-        decoded["message"] ??
-        "Request failed (${response.statusCode})";
+    dynamic detail = decoded["detail"];
+
+String message;
+
+if (detail is List) {
+  message = detail.map((e) => e.toString()).join(", ");
+} else if (detail is String) {
+  message = detail;
+} else {
+  message =
+      decoded["message"] ??
+      "Request failed (${response.statusCode})";
+}
 
     throw ApiException(message);
   }
