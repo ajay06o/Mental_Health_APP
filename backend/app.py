@@ -680,7 +680,10 @@ def analyze_social_advanced(
 
         "results": results,
     }
-    
+#=====================================================
+# 🔐 TEMP STORE FOR PKCE (ADD THIS)
+# =====================================================
+code_verifier_store = {}
 
 # =====================================================
 # 🐦 TWITTER AUTH START
@@ -709,6 +712,9 @@ def generate_pkce():
 def twitter_login():
     code_verifier, code_challenge = generate_pkce()
 
+    # 🔥 STORE verifier (IMPORTANT)
+    code_verifier_store["state123"] = code_verifier
+
     auth_url = (
         "https://twitter.com/i/oauth2/authorize"
         f"?response_type=code"
@@ -720,19 +726,138 @@ def twitter_login():
         f"&code_challenge_method=S256"
     )
 
-    return {
-        "auth_url": auth_url,
-        "code_verifier": code_verifier
-    }
+    return {"auth_url": auth_url}
 
 # =====================================================
 # 🐦 TWITTER CALLBACK
 # =====================================================
 @app.get("/auth/twitter/callback")
-def twitter_callback(code: str):
-    return {
-        "message": "Twitter connected successfully",
-        "code": code
-    }
-    
+def twitter_callback(code: str, db: Session = Depends(get_db)):
 
+    code_verifier = code_verifier_store.get("state123")
+
+    if not code_verifier:
+        raise HTTPException(status_code=400, detail="Code verifier missing")
+
+    code_verifier_store.pop("state123", None)
+
+    token_url = "https://api.twitter.com/2/oauth2/token"
+
+    data = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": TWITTER_REDIRECT_URI,
+        "client_id": TWITTER_CLIENT_ID,
+        "code_verifier": code_verifier,
+    }
+
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+
+    token_response = requests.post(
+        token_url,
+        data=data,
+        headers=headers,
+        timeout=10
+    )
+
+    if token_response.status_code != 200:
+        raise HTTPException(status_code=400, detail=token_response.text)
+
+    access_token = token_response.json().get("access_token")
+
+    if not access_token:
+        raise HTTPException(status_code=400, detail="Failed to get access token")
+
+    user_response = requests.get(
+        "https://api.twitter.com/2/users/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=10
+    )
+
+    if user_response.status_code != 200:
+        raise HTTPException(status_code=400, detail=user_response.text)
+
+    user_data = user_response.json()["data"]
+
+    twitter_id = user_data["id"]
+    username = user_data["username"]
+
+    user = db.query(User).filter(User.twitter_id == twitter_id).first()
+
+    if user:
+        user.twitter_access_token = access_token
+        user.twitter_username = username
+    else:
+        user = User(
+            name=username,
+            email=f"{twitter_id}@twitter.com",
+            password=hash_password(f"twitter_{twitter_id}"),
+            twitter_id=twitter_id,
+            twitter_username=username,
+            twitter_access_token=access_token,
+        )
+        db.add(user)
+
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "access_token": create_access_token({"sub": user.email}),
+        "refresh_token": create_refresh_token({"sub": user.email}),
+        "user_id": user.id,
+        "twitter_connected": True
+    }
+# =====================================================
+# 🐦 TWITTER ANALYSIS (REAL DATA)
+# =====================================================
+@app.get("/twitter/analyze")
+def analyze_twitter(user: User = Depends(get_current_user)):
+
+    # 🔴 Check if Twitter connected
+    if not user.twitter_access_token or not user.twitter_id:
+        raise HTTPException(status_code=400, detail="Twitter not connected")
+
+    # =====================================================
+    # STEP 1: FETCH TWEETS
+    # =====================================================
+    url = f"https://api.twitter.com/2/users/{user.twitter_id}/tweets"
+
+    headers = {
+        "Authorization": f"Bearer {user.twitter_access_token}"
+    }
+
+    response = requests.get(url, headers=headers, timeout=10)
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=400, detail=response.text)
+
+    tweets = response.json().get("data", [])
+
+    # =====================================================
+    # STEP 2: ANALYZE EMOTION
+    # =====================================================
+    results = []
+
+    for tweet in tweets:
+        text = tweet.get("text", "")
+
+        if not text:
+            continue
+
+        result = final_prediction(text, [])
+
+        results.append({
+            "text": text,
+            "emotion": result["final_mental_state"],
+            "confidence": result["confidence"]
+        })
+
+    # =====================================================
+    # STEP 3: RETURN RESULT
+    # =====================================================
+    return {
+        "total": len(results),
+        "data": results
+    }

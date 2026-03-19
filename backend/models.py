@@ -72,6 +72,28 @@ class User(Base):
         nullable=False,
     )
 
+    # =====================================================
+    # 🔥 NEW: TWITTER FIELDS (SAFE ADDITION)
+    # =====================================================
+    twitter_id = Column(
+        String(100),
+        unique=True,
+        nullable=True,
+        index=True,
+    )
+
+    twitter_username = Column(
+        String(100),
+        nullable=True,
+    )
+
+    twitter_access_token = Column(
+        Text,
+        nullable=True,
+    )
+
+    # =====================================================
+
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -90,9 +112,6 @@ class User(Base):
 
 # =====================================================
 # 🧠 EMOTION HISTORY MODEL
-# =====================================================
-# =====================================================
-# 🧠 EMOTION HISTORY MODEL (UPDATED)
 # =====================================================
 class EmotionHistory(Base):
     __tablename__ = "emotion_history"
