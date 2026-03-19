@@ -297,4 +297,22 @@ class PredictService {
       throw Exception("Image upload failed: $e");
     }
   }
+
+  // =====================================================
+// 🌐 SOCIAL INSIGHTS (NEW - PRO)
+// =====================================================
+static Future<Map<String, dynamic>> getSocialInsights() async {
+  try {
+    final response = await ApiClient.get("/auth/twitter");
+
+    if (response is Map<String, dynamic>) {
+      return response;
+    }
+
+    return {};
+  } catch (e) {
+    print("Error: $e");
+    return {};
+  }
+}
 }

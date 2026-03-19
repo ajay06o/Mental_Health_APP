@@ -61,6 +61,15 @@ from security import (
 from ai_models.mental_health_model import final_prediction
 import models
 
+
+# =====================================================
+# SOCIAL MEDIA ANALYSIS IMPORTS (NEW)
+# =====================================================
+from schemas import SocialBatchAnalysisRequest
+from services.analyzer import analyze_text
+from services.trends import calculate_overall
+from services.risk_detector import detect_risk
+
 # =====================================================
 # LOGGER
 # =====================================================
@@ -571,4 +580,138 @@ def delete_history(
 
     return {"message": "History deleted successfully"}
 
-print("SECRET_KEY:", os.getenv("SECRET_KEY"))
+# =====================================================
+# 🌐 SOCIAL MEDIA ANALYSIS (PRO LEVEL)
+# =====================================================
+# =====================================================
+# 🌐 SOCIAL MEDIA ANALYSIS (PRO MAX)
+# =====================================================
+@app.post("/analyze-social")
+def analyze_social_advanced(
+    data: SocialBatchAnalysisRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+
+    if not data.posts:
+        raise HTTPException(status_code=400, detail="No posts provided")
+
+    results = []
+    valid_posts = 0
+
+    # =====================================================
+    # ANALYZE POSTS
+    # =====================================================
+    for post in data.posts:
+
+        if not post.text or not post.text.strip():
+            continue
+
+        try:
+            res = analyze_text(post.text)
+
+            results.append({
+                "text": post.text,
+                "emotion": res.get("emotion", "neutral"),
+                "confidence": res.get("confidence", 0.0),
+                "score": res.get("score", 0),
+                "timestamp": post.timestamp,
+            })
+
+            valid_posts += 1
+
+        except Exception as e:
+            logger.error(f"Social analysis error: {e}")
+
+    if valid_posts == 0:
+        raise HTTPException(status_code=400, detail="No valid posts to analyze")
+
+    # =====================================================
+    # TREND ANALYSIS
+    # =====================================================
+    avg_score, dominant, insights = calculate_overall(results)
+
+    # =====================================================
+    # RISK DETECTION
+    # =====================================================
+    risk = detect_risk(
+        avg_score=avg_score,
+        dominant_emotion=dominant,
+        confidence=insights.get("avg_confidence", 0),
+    )
+
+    # =====================================================
+    # SAVE TO DB (SAFE)
+    # =====================================================
+    try:
+        history_entry = EmotionHistory(
+            user_id=user.id,
+            emotion=dominant,
+            confidence=insights.get("avg_confidence", 0),
+            severity="medium",
+            risk=risk,
+            mental_health_index=insights.get("mental_health_index", 50),
+            text="SOCIAL_ANALYSIS_BATCH",
+            platform=data.platform,
+        )
+
+        db.add(history_entry)
+        db.commit()
+
+    except Exception as e:
+        logger.error(f"DB Save Error: {e}")
+        db.rollback()
+
+    # =====================================================
+    # RESPONSE
+    # =====================================================
+    return {
+        "user_id": data.user_id,
+        "platform": data.platform,
+
+        "overall_score": round(avg_score, 3),
+        "dominant_emotion": dominant,
+        "risk_level": risk,
+
+        "mental_health_index": insights.get("mental_health_index"),
+        "emotion_distribution": insights.get("emotion_distribution"),
+        "avg_confidence": insights.get("avg_confidence"),
+        "total_posts": insights.get("total_entries"),
+
+        "results": results,
+    }
+    
+
+# =====================================================
+# 🐦 TWITTER AUTH START
+# =====================================================
+import requests
+
+TWITTER_CLIENT_ID = os.getenv("TWITTER_CLIENT_ID")
+
+TWITTER_REDIRECT_URI = "https://mental-health-app-zpng.onrender.com/auth/twitter/callback"
+
+@app.get("/auth/twitter")
+def twitter_login():
+    auth_url = (
+        "https://twitter.com/i/oauth2/authorize"
+        f"?response_type=code"
+        f"&client_id={TWITTER_CLIENT_ID}"
+        f"&redirect_uri={TWITTER_REDIRECT_URI}"
+        f"&scope=tweet.read users.read offline.access"
+        f"&state=state123"
+    )
+
+    return {"auth_url": auth_url}
+
+# =====================================================
+# 🐦 TWITTER CALLBACK
+# =====================================================
+@app.get("/auth/twitter/callback")
+def twitter_callback(code: str):
+    return {
+        "message": "Twitter connected successfully",
+        "code": code
+    }
+    
+

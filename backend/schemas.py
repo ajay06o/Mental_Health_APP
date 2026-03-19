@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 
 # =====================================================
@@ -84,7 +84,7 @@ class EmotionCreate(BaseModel):
 
 
 # =====================================================
-# EMOTION RESPONSE (UPDATED FOR DYNAMIC DETECTION)
+# EMOTION RESPONSE
 # =====================================================
 
 class EmotionResponse(BaseModel):
@@ -97,21 +97,18 @@ class EmotionResponse(BaseModel):
         example=0.87
     )
 
-    # 🔥 Changed from int → str (low/medium/high)
     severity: str = Field(
         ...,
         example="high",
         description="Severity level (low / medium / high)",
     )
 
-    # 🆕 Risk level
     risk: str = Field(
         ...,
         example="moderate",
         description="Risk classification (low / moderate / high / critical)",
     )
 
-    # 🧠 Mental Health Index
     mental_health_index: int = Field(
         ...,
         ge=0,
@@ -133,7 +130,7 @@ class EmotionResponse(BaseModel):
 
 
 # =====================================================
-# SOCIAL SCHEMAS
+# SOCIAL SCHEMAS (EXISTING - UNCHANGED)
 # =====================================================
 
 class SocialConnectRequest(BaseModel):
@@ -176,21 +173,79 @@ class SocialAnalysisResponse(BaseModel):
 
 
 # =====================================================
+# 🆕 PRO SOCIAL ANALYSIS SCHEMAS (NEW - ADVANCED)
+# =====================================================
+
+class SocialPost(BaseModel):
+    text: str = Field(..., min_length=1, max_length=2000)
+    timestamp: Optional[datetime] = None
+
+    @field_validator("text")
+    @classmethod
+    def clean_text(cls, value: str):
+        value = value.strip()
+        if not value:
+            raise ValueError("Post text cannot be empty")
+        return value
+
+
+class SocialBatchAnalysisRequest(BaseModel):
+    user_id: str = Field(..., example="user_123")
+    platform: str = Field(..., example="twitter")
+    posts: List[SocialPost]
+
+    @field_validator("platform")
+    @classmethod
+    def normalize_platform(cls, value):
+        return value.strip().lower()
+
+
+class PostAnalysisResult(BaseModel):
+    text: str
+    emotion: str
+    confidence: float
+    score: float
+    risk: str
+    timestamp: Optional[datetime]
+
+
+class SocialTrendPoint(BaseModel):
+    date: datetime
+    avg_score: float
+    dominant_emotion: str
+
+
+class SocialInsights(BaseModel):
+    overall_score: float
+    mental_health_index: int
+    dominant_emotion: str
+    risk_level: str
+    total_posts: int
+
+
+class AdvancedSocialAnalysisResponse(BaseModel):
+    user_id: str
+    platform: str
+
+    insights: SocialInsights
+    post_results: List[PostAnalysisResult]
+
+    trend: List[SocialTrendPoint]
+
+    generated_at: datetime
+
+
+# =====================================================
 # PROFILE SCHEMAS
 # =====================================================
 
 class ProfileResponse(BaseModel):
     user_id: int
-
-    # 👤 NEW: Name field
     name: Optional[str] = None
-
     email: EmailStr
     total_entries: int
     avg_severity: float
     high_risk: bool
-
-    # 🔹 Emergency system
     emergency_email: Optional[EmailStr] = None
     emergency_name: Optional[str] = None
     alerts_enabled: bool
@@ -198,7 +253,6 @@ class ProfileResponse(BaseModel):
 
 class ProfileUpdate(BaseModel):
 
-    # 👤 NEW: Name support
     name: Optional[str] = Field(
         None,
         max_length=255,
@@ -217,7 +271,6 @@ class ProfileUpdate(BaseModel):
         example="newpassword123",
     )
 
-    # 🔹 Emergency fields
     emergency_email: Optional[EmailStr] = Field(
         None,
         example="parent@gmail.com",
@@ -233,10 +286,6 @@ class ProfileUpdate(BaseModel):
         None,
         example=True,
     )
-
-    # ==========================
-    # VALIDATORS
-    # ==========================
 
     @field_validator("name")
     @classmethod

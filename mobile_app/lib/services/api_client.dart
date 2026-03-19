@@ -398,6 +398,41 @@ if (detail is List) {
   }
 
   // =================================================
+// 🌐 SOCIAL ANALYSIS (NEW - PRO)
+// =================================================
+
+static Future<Map<String, dynamic>> analyzeSocial({
+  required List<Map<String, dynamic>> posts,
+  String platform = "manual",
+  String userId = "user_123",
+}) async {
+  final result = await post(
+    "/analyze-social",
+    {
+      "user_id": userId,
+      "platform": platform,
+      "posts": posts,
+    },
+  );
+
+  return Map<String, dynamic>.from(result);
+}
+
+// =================================================
+// 🧠 HELPER: BUILD POSTS
+// =================================================
+
+static List<Map<String, dynamic>> buildPosts(
+    List<String> texts) {
+  return texts
+      .where((t) => t.trim().isNotEmpty)
+      .map((t) => {
+            "text": t,
+          })
+      .toList();
+}
+
+  // =================================================
   // 🧹 CLEANUP
   // =================================================
   static void dispose() {

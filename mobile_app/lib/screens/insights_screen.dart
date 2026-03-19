@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/predict_service.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../services/api_client.dart'; 
 
 class InsightsScreen extends StatefulWidget {
   const InsightsScreen({super.key});
@@ -16,6 +17,8 @@ class _InsightsScreenState extends State<InsightsScreen>
   late Future<List<Map<String, dynamic>>> _historyFuture;
   late AnimationController _controller;
   late Animation<double> _fade;
+  Map<String, dynamic>? socialData;
+  bool isLoadingSocial = true;
 
   bool _crisisDialogShown = false;
 
@@ -23,6 +26,7 @@ class _InsightsScreenState extends State<InsightsScreen>
   void initState() {
     super.initState();
     _historyFuture = PredictService.fetchHistory();
+    _fetchSocialInsights();
 
     _controller = AnimationController(
       vsync: this,
@@ -39,10 +43,25 @@ class _InsightsScreenState extends State<InsightsScreen>
   }
 
   void _refresh() {
+  setState(() {
+    _historyFuture = PredictService.fetchHistory();
+    isLoadingSocial = true;
+  });
+
+  _fetchSocialInsights(); // important
+}
+  Future<void> _fetchSocialInsights() async {
+  try {
+    final data = await PredictService.getSocialInsights();
+
     setState(() {
-      _historyFuture = PredictService.fetchHistory();
+      socialData = data;
+      isLoadingSocial = false;
     });
+  } catch (e) {
+    setState(() => isLoadingSocial = false);
   }
+}
 
 
   @override
@@ -119,7 +138,72 @@ if (!_crisisDialogShown &&
                     padding: const EdgeInsets.symmetric(
                         horizontal: 20, vertical: 24),
                     children: [
+                      // ================= SOCIAL INSIGHTS =================
 
+if (isLoadingSocial)
+  const Center(
+    child: CircularProgressIndicator(color: Colors.white),
+  )
+else if (socialData != null) ...[
+
+  _sectionTitle("Social Insights"),
+  const SizedBox(height: 16),
+  ElevatedButton(
+  onPressed: _connectTwitter,
+  style: ElevatedButton.styleFrom(
+    backgroundColor: Colors.black,
+    padding: const EdgeInsets.symmetric(vertical: 12),
+  ),
+  child: const Text("Connect Twitter"),
+),
+const SizedBox(height: 16),
+
+  _glassCard(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+
+        // Score + Risk
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              "Score: ${socialData?["mental_health_index"] ?? "--"}",
+              style: const TextStyle(color: Colors.white),
+            ),
+
+            Text(
+  (socialData?["risk_level"] ?? "low").toString().toUpperCase(),
+  style: TextStyle(
+    fontWeight: FontWeight.bold,
+    color: _getRiskColor(
+        socialData?["risk_level"] ?? "low"),
+  ),
+),
+          ],
+        ),
+
+        const SizedBox(height: 16),
+
+        // Emotion Distribution
+        ...((socialData?["emotion_distribution"]
+            as Map<String, dynamic>?) ??
+        {})
+    .entries
+    .map((e) {
+      final value = (e.value is num) ? e.value.toDouble() : 0.0;
+
+      return Text(
+        "${e.key} : ${(value * 100).toInt()}%",
+        style: const TextStyle(color: Colors.white70),
+      );
+    }),
+      ],
+    ),
+  ),
+
+  const SizedBox(height: 30),
+],
                       _sectionTitle("Mental Health Index"),
                       const SizedBox(height: 16),
                       _mentalHealthIndexCard(mentalIndex),
@@ -151,6 +235,7 @@ const SizedBox(height: 32),
         ),
       ),
     );
+    
   }
 
  Widget _sectionTitle(String title) {
@@ -983,5 +1068,37 @@ Color _indexGlow(double index) {
       ),
     ),
   );
+}
+Color _getRiskColor(String risk) {
+  switch (risk.toLowerCase()) {
+    case "high":
+      return Colors.redAccent;
+    case "medium":
+      return Colors.orangeAccent;
+    default:
+      return Colors.greenAccent;
+  }
+}
+void _connectTwitter() async {
+  try {
+    // ✅ Call correct API
+    final response =
+        await ApiClient.getPublic("/auth/twitter");
+
+    final authUrl = response["auth_url"];
+
+    if (authUrl == null) {
+      print("Auth URL not found");
+      return;
+    }
+
+    // ✅ Open Twitter login
+    await launchUrl(
+      Uri.parse(authUrl),
+      mode: LaunchMode.externalApplication,
+    );
+  } catch (e) {
+    print("Twitter error: $e");
+  }
 }
 }

@@ -95,13 +95,16 @@ class AuthService {
 static Future<bool> login(String email, String password) async {
   for (int attempt = 0; attempt < 2; attempt++) {
     try {
-      // 🚀 Step 1: Wake server (IMPORTANT for Render)
+      // 🚀 STEP 1: Wake server BEFORE login
       if (attempt == 0) {
         print("🌙 Waking up server...");
         await ApiClient.warmUpServer();
+
+        // ⏳ Wait for server to fully wake
+        await Future.delayed(const Duration(seconds: 2));
       }
 
-      print("🔐 LOGIN ATTEMPT ${attempt + 1} → $email");
+      print("🔐 LOGIN ATTEMPT ${attempt + 1}");
 
       final data = await ApiClient.postForm(
         "/login",
@@ -119,7 +122,6 @@ static Future<bool> login(String email, String password) async {
 
       if (attempt == 1) return false;
 
-      // ⏳ Wait before retry
       await Future.delayed(const Duration(seconds: 2));
     }
   }
