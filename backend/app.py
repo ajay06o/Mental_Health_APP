@@ -747,13 +747,21 @@ def twitter_callback(code: str, db: Session = Depends(get_db)):
         "grant_type": "authorization_code",
         "code": code,
         "redirect_uri": TWITTER_REDIRECT_URI,
-        "client_id": TWITTER_CLIENT_ID,
         "code_verifier": code_verifier,
     }
 
+    import base64
+
+    client_id = TWITTER_CLIENT_ID
+    client_secret = os.getenv("TWITTER_CLIENT_SECRET")
+
+    client_creds = f"{client_id}:{client_secret}"
+    basic_auth = base64.b64encode(client_creds.encode()).decode()
+
     headers = {
-        "Content-Type": "application/x-www-form-urlencoded"
-    }
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": f"Basic {basic_auth}",
+}
 
     token_response = requests.post(
         token_url,
