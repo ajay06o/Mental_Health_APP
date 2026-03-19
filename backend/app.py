@@ -691,8 +691,24 @@ TWITTER_CLIENT_ID = os.getenv("TWITTER_CLIENT_ID")
 
 TWITTER_REDIRECT_URI = "https://mental-health-app-zpng.onrender.com/auth/twitter/callback"
 
+import base64
+import hashlib
+import os
+
+def generate_pkce():
+    code_verifier = base64.urlsafe_b64encode(os.urandom(32)).decode().rstrip("=")
+
+    code_challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(code_verifier.encode()).digest()
+    ).decode().rstrip("=")
+
+    return code_verifier, code_challenge
+
+
 @app.get("/auth/twitter")
 def twitter_login():
+    code_verifier, code_challenge = generate_pkce()
+
     auth_url = (
         "https://twitter.com/i/oauth2/authorize"
         f"?response_type=code"
@@ -700,9 +716,14 @@ def twitter_login():
         f"&redirect_uri={TWITTER_REDIRECT_URI}"
         f"&scope=tweet.read users.read offline.access"
         f"&state=state123"
+        f"&code_challenge={code_challenge}"
+        f"&code_challenge_method=S256"
     )
 
-    return {"auth_url": auth_url}
+    return {
+        "auth_url": auth_url,
+        "code_verifier": code_verifier
+    }
 
 # =====================================================
 # 🐦 TWITTER CALLBACK

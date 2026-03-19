@@ -1082,8 +1082,7 @@ Color _getRiskColor(String risk) {
 void _connectTwitter() async {
   try {
     // ✅ Call correct API
-    final response =
-        await ApiClient.getPublic("/auth/twitter");
+    final response = await ApiClient.getPublic("/auth/twitter");
 
     final authUrl = response["auth_url"];
 
