@@ -77,7 +77,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("mental_health_api")
 
    # delete old table
-models.Base.metadata.create_all(bind=engine) # create new table
+if os.getenv("ENV") == "local":
+    models.Base.metadata.create_all(bind=engine)# create new table
 
 # =====================================================
 # CLOUDINARY CONFIG

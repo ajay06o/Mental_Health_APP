@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 import os, base64, requests, secrets, hashlib
+from fastapi.responses import RedirectResponse
 
 router = APIRouter()
 
@@ -84,7 +85,6 @@ def twitter_callback(code: str):
     from services.analyzer import analyze_text
     results = [analyze_text(t) for t in texts]
 
-    return {
-        "tweets": texts,
-        "analysis": results
-    }
+    redirect_url = f"https://google.com?success=true"
+
+    return RedirectResponse(url=redirect_url)
