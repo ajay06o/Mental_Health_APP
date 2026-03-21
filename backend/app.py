@@ -76,7 +76,7 @@ from services.risk_detector import detect_risk
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("mental_health_api")
 
-models.Base.metadata.drop_all(bind=engine)   # delete old table
+   # delete old table
 models.Base.metadata.create_all(bind=engine) # create new table
 
 # =====================================================
