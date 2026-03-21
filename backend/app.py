@@ -712,13 +712,15 @@ def generate_pkce():
     return code_verifier, code_challenge
 
 from fastapi.responses import RedirectResponse
+import secrets
 
 @app.get("/auth/twitter")
 def twitter_login():
     code_verifier, code_challenge = generate_pkce()
 
     # 🔥 STORE verifier (IMPORTANT)
-    code_verifier_store["state123"] = code_verifier
+    state = secrets.token_urlsafe(16)
+    code_verifier_store[state] = code_verifier
 
     auth_url = (
         "https://twitter.com/i/oauth2/authorize"
@@ -726,7 +728,7 @@ def twitter_login():
         f"&client_id={TWITTER_CLIENT_ID}"
         f"&redirect_uri={TWITTER_REDIRECT_URI}"
         f"&scope=tweet.read users.read offline.access"
-        f"&state=state123"
+        f"&state={state}"
         f"&code_challenge={code_challenge}"
         f"&code_challenge_method=S256"
     )
@@ -739,14 +741,14 @@ def twitter_login():
 # 🐦 TWITTER CALLBACK
 # =====================================================
 @app.get("/auth/twitter/callback")
-def twitter_callback(code: str, db: Session = Depends(get_db)):
+def twitter_callback(code: str, state: str, db: Session = Depends(get_db)):
 
-    code_verifier = code_verifier_store.get("state123")
+    code_verifier = code_verifier_store.get(state)
 
     if not code_verifier:
         raise HTTPException(status_code=400, detail="Code verifier missing")
 
-    code_verifier_store.pop("state123", None)
+    code_verifier_store.pop(state, None)
 
     token_url = "https://api.twitter.com/2/oauth2/token"
 
@@ -819,27 +821,20 @@ def twitter_callback(code: str, db: Session = Depends(get_db)):
     db.refresh(user)
 
     from fastapi.responses import HTMLResponse
+    token = create_access_token({"sub": user.email})
 
-    html_content = f"""
-    <h2>Twitter Connected Successfully ✅</h2>
-
-    <p><b>User:</b> {username}</p>
-
-    <p>Now click below to analyze your mental health:</p>
-
-    <a href="/twitter/analyze" target="_blank">
-        <button style="padding:10px 20px;font-size:16px;">
-            Analyze My Mental Health
-        </button>
-    </a>
-    """
-
-    return HTMLResponse(content=html_content)
+    return RedirectResponse(
+    url=f"/twitter/analyze?token={token}"
+)
 # =====================================================
 # 🐦 TWITTER ANALYSIS (REAL DATA)
 # =====================================================
+from fastapi import Query
 @app.get("/twitter/analyze")
-def analyze_twitter(user: User = Depends(get_current_user)):
+def analyze_twitter(token: str = Query(...), db: Session = Depends(get_db)):
+
+    email = verify_access_token(token)
+    user = db.query(User).filter(User.email == email).first()
 
     # 🔴 Check if Twitter connected
     if not user.twitter_access_token or not user.twitter_id:
