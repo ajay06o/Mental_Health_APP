@@ -42,7 +42,7 @@ Future<void> main() async {
 
   // 🔁 Global Session Expiry Handler
   ApiClient.onSessionExpired = () {
-    appRouter.go("/login");
+    appRouter.go("/Login");
   };
 }
 

@@ -1081,19 +1081,12 @@ Color _getRiskColor(String risk) {
 }
 void _connectTwitter() async {
   try {
-    // ✅ Call correct API
-    final response = await ApiClient.getPublic("/auth/twitter");
+    final url = Uri.parse(
+      "https://mental-health-app-zpng.onrender.com/auth/twitter",
+    );
 
-    final authUrl = response["auth_url"];
-
-    if (authUrl == null) {
-      print("Auth URL not found");
-      return;
-    }
-
-    // ✅ Open Twitter login
     await launchUrl(
-      Uri.parse(authUrl),
+      url,
       mode: LaunchMode.externalApplication,
     );
   } catch (e) {
