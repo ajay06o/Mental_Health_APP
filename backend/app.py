@@ -711,6 +711,7 @@ def generate_pkce():
 
     return code_verifier, code_challenge
 
+from fastapi.responses import RedirectResponse
 
 @app.get("/auth/twitter")
 def twitter_login():
@@ -730,7 +731,9 @@ def twitter_login():
         f"&code_challenge_method=S256"
     )
 
-    return {"auth_url": auth_url}
+   
+
+    return RedirectResponse(url=auth_url)
 
 # =====================================================
 # 🐦 TWITTER CALLBACK
