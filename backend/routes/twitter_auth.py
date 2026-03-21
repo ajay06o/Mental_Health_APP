@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 import os, base64, requests, secrets, hashlib
 from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse
 
 router = APIRouter()
 
@@ -85,6 +86,18 @@ def twitter_callback(code: str):
     from services.analyzer import analyze_text
     results = [analyze_text(t) for t in texts]
 
-    redirect_url = f"https://google.com?success=true"
+    html_content = f"""
+    <h2>Twitter Mental Health Analysis</h2>
 
-    return RedirectResponse(url=redirect_url)
+    <h3>Tweets:</h3>
+    <ul>
+    {''.join(f"<li>{t}</li>" for t in texts)}
+    </ul>
+
+    <h3>Analysis:</h3>
+    <ul>
+    {''.join(f"<li>{r}</li>" for r in results)}
+    </ul>
+    """
+
+    return HTMLResponse(content=html_content)
