@@ -30,7 +30,7 @@ def twitter_login():
         "&code_challenge_method=S256"
     )
 
-    return {"url": url}
+    return RedirectResponse(url=url)
 
 
 @router.get("/auth/twitter/callback")
