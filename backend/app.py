@@ -815,12 +815,23 @@ def twitter_callback(code: str, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
-    return {
-        "access_token": create_access_token({"sub": user.email}),
-        "refresh_token": create_refresh_token({"sub": user.email}),
-        "user_id": user.id,
-        "twitter_connected": True
-    }
+    from fastapi.responses import HTMLResponse
+
+    html_content = f"""
+    <h2>Twitter Connected Successfully ✅</h2>
+
+    <p><b>User:</b> {username}</p>
+
+    <p>Now click below to analyze your mental health:</p>
+
+    <a href="/twitter/analyze" target="_blank">
+        <button style="padding:10px 20px;font-size:16px;">
+            Analyze My Mental Health
+        </button>
+    </a>
+    """
+
+    return HTMLResponse(content=html_content)
 # =====================================================
 # 🐦 TWITTER ANALYSIS (REAL DATA)
 # =====================================================
