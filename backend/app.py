@@ -123,7 +123,11 @@ app = FastAPI(
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex="http://localhost:.*",  # handles any port
+    allow_origins=[
+        "http://localhost:49190",  # your current frontend
+        "http://127.0.0.1:49190",  # sometimes Flutter uses this
+        "https://mental-health-app-zpng.onrender.com",  # backend itself
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
