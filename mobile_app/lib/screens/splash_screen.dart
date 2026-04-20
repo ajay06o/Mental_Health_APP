@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart'; // ✅ Added
 import 'package:go_router/go_router.dart';
+import '../services/api_client.dart';
 
 import '../services/auth_service.dart';
 import '../services/biometric_service.dart';
@@ -50,47 +51,68 @@ class _SplashScreenState extends State<SplashScreen>
   // =================================================
   // 🚀 SAFE APP STARTUP FLOW
   // =================================================
-  Future<void> _bootstrap() async {
-    try {
-      await Future.delayed(const Duration(milliseconds: 1700));
+Future<void> _bootstrap() async {
+  try {
+    await Future.delayed(const Duration(milliseconds: 1700));
 
-      await AuthService.init();
+    // 🔥 STEP 1: Ensure backend is REALLY ready
+    bool serverReady = false;
 
-      if (!mounted || _navigated) return;
-
-      final loggedIn = await AuthService.isLoggedIn();
-
-      // 🔐 Not logged in → Login
-      if (!loggedIn) {
-        _navigate("/login");
-        return;
+    for (int i = 0; i < 5; i++) {
+      try {
+        await ApiClient.warmUpServer();
+        serverReady = true;
+        break;
+      } catch (e) {
+        print("Retry ${i + 1}: Server not ready");
+        await Future.delayed(const Duration(seconds: 2));
       }
+    }
 
-      // 🔁 Logged in → check Remember Me
-      final rememberMeEnabled =
-          await AuthService.isRememberMeEnabled();
+    if (!serverReady) {
+      print("⚠️ Server still not ready, continuing...");
+    }
 
-      if (rememberMeEnabled && !kIsWeb) {
-        final canBiometric =
-            await BiometricService.canAuthenticate();
+    // 🔐 STEP 2: Initialize auth
+    await AuthService.init();
 
-        if (canBiometric) {
-          final authenticated =
-              await BiometricService.authenticate();
+    if (!mounted || _navigated) return;
 
-          if (!authenticated) {
-            _navigate("/login");
-            return;
-          }
+    final loggedIn = await AuthService.isLoggedIn();
+
+    // 🔐 Not logged in → Login
+    if (!loggedIn) {
+      _navigate("/login");
+      return;
+    }
+
+    // 🔁 Logged in → biometric
+    final rememberMeEnabled =
+        await AuthService.isRememberMeEnabled();
+
+    if (rememberMeEnabled && !kIsWeb) {
+      final canBiometric =
+          await BiometricService.canAuthenticate();
+
+      if (canBiometric) {
+        final authenticated =
+            await BiometricService.authenticate();
+
+        if (!authenticated) {
+          _navigate("/login");
+          return;
         }
       }
-
-      // ✅ All checks passed → Home
-      _navigate("/home");
-    } catch (e) {
-      _navigate("/login");
     }
+
+    // ✅ Success → Home
+    _navigate("/home");
+
+  } catch (e) {
+    print("❌ Splash error: $e");
+    _navigate("/login");
   }
+}
 
   void _navigate(String route) {
     if (_navigated || !mounted) return;

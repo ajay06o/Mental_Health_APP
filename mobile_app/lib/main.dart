@@ -18,29 +18,13 @@ void callbackDispatcher() {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // ✅ Run UI immediately (prevents blank screen)
+  // 🔐 Initialize auth
+  await AuthService.init();
+
+  // 🚀 Start UI immediately (NO waiting)
   runApp(const MentalHealthApp());
 
-  try {
-    // 🔐 Initialize authentication
-    await AuthService.init();
-
-    // 🌐 Warm backend (non-blocking)
-    ApiClient.warmUpServer();
-
-    // 🔄 Initialize WorkManager (ONLY mobile)
-    if (!kIsWeb) {
-      await Workmanager().initialize(
-        callbackDispatcher,
-        isInDebugMode: false,
-      );
-    }
-
-  } catch (e) {
-    debugPrint("Startup error: $e");
-  }
-
-  // 🔁 Global Session Expiry Handler
+  // 🔁 Session expiry handler
   ApiClient.onSessionExpired = () {
     appRouter.go("/Login");
   };
