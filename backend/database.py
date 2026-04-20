@@ -1,7 +1,9 @@
 import os
 import logging
-from sqlalchemy import create_engine
+import time
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.pool import NullPool
 
 # =====================================================
 # 🔧 LOGGING SETUP
@@ -22,41 +24,41 @@ if not DATABASE_URL:
     DATABASE_URL = "sqlite:///./mental_health.db"
 
 # =====================================================
-# 🔒 FORCE SSL FOR POSTGRESQL (Render Requirement)
+# 🔧 FIX POSTGRES URL FORMAT (Render issue)
 # =====================================================
-if DATABASE_URL.startswith("postgres"):
-    if "sslmode" not in DATABASE_URL:
-        if "?" in DATABASE_URL:
-            DATABASE_URL += "&sslmode=require"
-        else:
-            DATABASE_URL += "?sslmode=require"
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # =====================================================
 # ⚙️ ENGINE CONFIGURATION
 # =====================================================
-connect_args = {}
+def create_db_engine():
+    try:
+        if DATABASE_URL.startswith("sqlite"):
+            engine = create_engine(
+                DATABASE_URL,
+                connect_args={"check_same_thread": False},
+                echo=False,
+            )
+        else:
+            engine = create_engine(
+                DATABASE_URL,
+                poolclass=NullPool,  # 🔥 CRITICAL for Render
+                connect_args={
+                    "sslmode": "require",
+                    "connect_timeout": 10,  # ⏱️ prevents hanging
+                },
+                echo=False,
+            )
 
-if DATABASE_URL.startswith("sqlite"):
-    connect_args = {"check_same_thread": False}
+        logger.info("✅ Database engine created successfully")
+        return engine
 
-try:
-    engine = create_engine(
-    DATABASE_URL,
-    connect_args={
-        **connect_args,
-        "sslmode": "require"  # 🔥 FORCE SSL HERE
-    },
-    pool_pre_ping=True,
-    pool_recycle=280,
-    pool_size=5,
-    max_overflow=10,
-    echo=False,
-)
-    logger.info("✅ Database engine created successfully")
+    except Exception as e:
+        logger.error(f"❌ Engine creation failed: {e}")
+        raise
 
-except Exception as e:
-    logger.error(f"❌ Error creating database engine: {e}")
-    raise
+engine = create_db_engine()
 
 # =====================================================
 # 🔁 SESSION FACTORY
@@ -73,27 +75,34 @@ SessionLocal = sessionmaker(
 Base = declarative_base()
 
 # =====================================================
-# 🔄 FASTAPI DATABASE DEPENDENCY
+# 🔄 FASTAPI DATABASE DEPENDENCY (WITH RETRY)
 # =====================================================
 def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    except Exception as e:
-        logger.error(f"❌ DB Session Error: {e}")
-        db.rollback()
-        raise
-    finally:
-        db.close()
+    retries = 3
 
+    for attempt in range(retries):
+        db = SessionLocal()
+        try:
+            yield db
+            return
+        except Exception as e:
+            db.rollback()
+            logger.error(f"❌ DB Error (attempt {attempt+1}): {e}")
+
+            if attempt < retries - 1:
+                time.sleep(1)  # small retry delay
+            else:
+                raise
+        finally:
+            db.close()
 
 # =====================================================
-# 🧪 OPTIONAL: DATABASE HEALTH CHECK
+# 🧪 DATABASE HEALTH CHECK
 # =====================================================
 def check_db_connection():
     try:
         with engine.connect() as connection:
-            connection.execute("SELECT 1")
+            connection.execute(text("SELECT 1"))
         logger.info("✅ Database connection successful")
         return True
     except Exception as e:
