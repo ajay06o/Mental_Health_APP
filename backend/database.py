@@ -24,7 +24,7 @@ if not DATABASE_URL:
 # =====================================================
 # 🔒 FORCE SSL FOR POSTGRESQL (Render Requirement)
 # =====================================================
-if DATABASE_URL.startswith("postgresql"):
+if DATABASE_URL.startswith("postgres"):
     if "sslmode" not in DATABASE_URL:
         if "?" in DATABASE_URL:
             DATABASE_URL += "&sslmode=require"
@@ -41,14 +41,17 @@ if DATABASE_URL.startswith("sqlite"):
 
 try:
     engine = create_engine(
-        DATABASE_URL,
-        connect_args=connect_args,
-        pool_pre_ping=True,     # avoids stale connections
-        pool_recycle=280,       # prevents timeout issues (Render fix)
-        pool_size=5,
-        max_overflow=10,
-        echo=False,             # set True for SQL debugging
-    )
+    DATABASE_URL,
+    connect_args={
+        **connect_args,
+        "sslmode": "require"  # 🔥 FORCE SSL HERE
+    },
+    pool_pre_ping=True,
+    pool_recycle=280,
+    pool_size=5,
+    max_overflow=10,
+    echo=False,
+)
     logger.info("✅ Database engine created successfully")
 
 except Exception as e:
