@@ -34,12 +34,29 @@ class ApiClient {
   // 🔥 SERVER WARMUP
   // =================================================
   static Future<void> warmUpServer() async {
+  int retries = 5;
+
+  for (int i = 0; i < retries; i++) {
     try {
-      await _client
-          .get(Uri.parse(baseUrl))
-          .timeout(_defaultTimeout);
-    } catch (_) {}
+      print("🔥 Warming server attempt ${i + 1}");
+
+      final res = await _client
+          .get(Uri.parse("$baseUrl/health"))
+          .timeout(const Duration(seconds: 10));
+
+      if (res.statusCode == 200) {
+        print("✅ Server is awake");
+        return;
+      }
+    } catch (e) {
+      print("❌ Warmup failed: $e");
+    }
+
+    await Future.delayed(const Duration(seconds: 2));
   }
+
+  print("⚠️ Server may still be sleeping");
+}
 
   // =================================================
   // 🧾 HEADERS
@@ -85,7 +102,12 @@ class ApiClient {
   }) async {
     try {
       final response =
-          await request().timeout(_defaultTimeout);
+          await request().timeout(
+  _defaultTimeout,
+  onTimeout: () {
+    throw ApiException("Server timeout (Render cold start)");
+  },
+);
 
       if (response.statusCode != 401) {
         return response;
@@ -110,9 +132,12 @@ class ApiClient {
         retrying: true,
       );
     } catch (e) {
-      if (e is ApiException) rethrow;
-      throw ApiException("Network error occurred.");
-    }
+  print("🔥 REAL ERROR: $e");
+
+  if (e is ApiException) rethrow;
+
+  throw ApiException(e.toString()); // ✅ SHOW REAL ERROR
+}
   }
 
   // =================================================

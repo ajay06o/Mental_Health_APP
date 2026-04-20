@@ -121,17 +121,20 @@ app = FastAPI(
 # =====================================================
 # CORS
 # =====================================================
+from fastapi.middleware.cors import CORSMiddleware
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:49190",  # your current frontend
-        "http://127.0.0.1:49190",  # sometimes Flutter uses this
-        "https://mental-health-app-zpng.onrender.com",  # backend itself
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],   # 🔥 use only for testing
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],  # 🔥 ADD THIS
 )
+
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(rest_of_path: str):
+    return {"status": "ok"}
 
 # =====================================================
 # ROOT
@@ -139,6 +142,33 @@ app.add_middleware(
 @app.get("/")
 def root():
     return {"status": "Backend Running 🚀"}
+from sqlalchemy import text
+from database import SessionLocal
+from fastapi.responses import JSONResponse
+
+@app.middleware("http")
+async def db_warmup_middleware(request, call_next):
+    try:
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+    except Exception as e:
+        logger.error(f"DB Warmup Failed: {e}")
+        # ✅ DO NOT BREAK REQUEST
+    finally:
+        try:
+            db.close()
+        except:
+            pass
+
+    try:
+        response = await call_next(request)
+        return response
+    except Exception as e:
+        logger.error(f"Request failed: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Internal Server Error"}
+        )
 
 @app.get("/health")
 def health():
@@ -147,14 +177,17 @@ def health():
 # =====================================================
 # GLOBAL ERROR HANDLER
 # =====================================================
-#@app.exception_handler(Exception)
-#async def global_exception_handler(request, exc):
- #   logger.exception("Unhandled backend error")
-  #  return JSONResponse(
-   #     status_code=500,
-    #    content={"detail": "Internal Server Error"},
-    #)
-      
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"🔥 Unhandled Error: {str(exc)}")
+
+    return JSONResponse(
+        status_code=500,
+        content={"error": str(exc)},
+    )
 
 
 
@@ -187,20 +220,34 @@ def get_current_user(
 # =====================================================
 @app.post("/register")
 def register(user: UserCreate, db: Session = Depends(get_db)):
-    email = user.email.strip().lower()
+    try:
+        email = user.email.strip().lower()
 
-    if db.query(User).filter(User.email == email).first():
-        raise HTTPException(status_code=400, detail="Email already registered")
+        existing_user = db.query(User).filter(User.email == email).first()
 
-    new_user = User(
-        email=email,
-        password=hash_password(user.password),
-    )
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Email already registered")
 
-    db.add(new_user)
-    db.commit()
+        new_user = User(
+            email=email,
+            password=hash_password(user.password),
+        )
 
-    return {"message": "User registered successfully"}
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+
+        return {"message": "User registered successfully"}
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        logger.error(f"REGISTER ERROR: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Registration failed"}
+        )
 
 # =====================================================
 # LOGIN
