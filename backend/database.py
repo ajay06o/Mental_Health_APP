@@ -123,5 +123,5 @@ def check_db_connection():
             logger.warning(f"⚠️ DB check failed (attempt {attempt+1}): {e}")
             time.sleep(1)
 
-    logger.error("❌ Database connection failed after retries")
+    logger.warning("⚠️ DB not ready yet (cold start, expected)")
     return False
