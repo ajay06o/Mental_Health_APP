@@ -147,19 +147,7 @@ from database import SessionLocal
 from fastapi.responses import JSONResponse
 
 @app.middleware("http")
-async def db_warmup_middleware(request, call_next):
-    try:
-        db = SessionLocal()
-        db.execute(text("SELECT 1"))
-    except Exception as e:
-        logger.warning(f"⚠️ DB warmup skipped (cold start, expected): {e}")
-        # ✅ DO NOT BREAK REQUEST
-    finally:
-        try:
-            db.close()
-        except:
-            pass
-
+async def request_middleware(request, call_next):
     try:
         response = await call_next(request)
         return response
