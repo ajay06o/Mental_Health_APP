@@ -152,7 +152,7 @@ async def db_warmup_middleware(request, call_next):
         db = SessionLocal()
         db.execute(text("SELECT 1"))
     except Exception as e:
-        logger.error(f"DB Warmup Failed: {e}")
+        logger.warning(f"⚠️ DB warmup skipped (cold start, expected): {e}")
         # ✅ DO NOT BREAK REQUEST
     finally:
         try:
