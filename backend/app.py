@@ -73,13 +73,17 @@ from services.risk_detector import detect_risk
 # =====================================================
 # LOGGER
 # =====================================================
+import models
+
+# =====================================================
+# LOGGER
+# =====================================================
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("mental_health_api")
 
-   # delete old table
-if os.getenv("ENV") == "local":
-    models.Base.metadata.create_all(bind=engine)# create new table
-
+# =====================================================
+# 🔥 CREATE TABLES (FIXED)
+# =====================================================
 # =====================================================
 # CLOUDINARY CONFIG
 # =====================================================
@@ -117,6 +121,14 @@ app = FastAPI(
     title="Mental Health Detection API",
     version="9.2.1",
 )
+@app.on_event("startup")
+def startup():
+    try:
+        logger.info("🔥 Creating database tables...")
+        models.Base.metadata.create_all(bind=engine)
+        logger.info("✅ Tables created successfully")
+    except Exception as e:
+        logger.error(f"❌ Table creation failed: {e}")
 
 # =====================================================
 # CORS
@@ -219,6 +231,8 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         new_user = User(
             email=email,
             password=hash_password(user.password),
+            name="",                 # ✅ SAFE DEFAULT
+            alerts_enabled=False     # ✅ SAFE DEFAULT
         )
 
         db.add(new_user)
@@ -231,11 +245,10 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         raise
 
     except Exception as e:
+        import traceback
         logger.error(f"REGISTER ERROR: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={"error": "Registration failed"}
-        )
+        logger.error(traceback.format_exc())
+        raise # 🔥 DO NOT HIDE ERROR
 
 # =====================================================
 # LOGIN
